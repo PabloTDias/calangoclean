@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; object-src 'none'; base-uri 'none'" />
+  <title>Fotos duplicadas — CalangoClean</title>
+  <link rel="stylesheet" href="theme.css" />
+  <link rel="stylesheet" href="photos.css" />
+</head>
+<body>
+  <main class="photo-app">
+    <header class="app-header">
+      <div class="heading">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <div><div class="eyebrow">CALANGOCLEAN <span>/</span> FERRAMENTAS</div><h1 id="windowTitle">Fotos duplicadas</h1></div>
+      </div>
+      <div class="header-badges"><span class="pill demo" id="demoBadge" hidden>Demonstração · arquivos de exemplo</span><span class="pill sim" id="simBadge" hidden>Simulação</span><span class="pill manual"><span data-icon="shield"></span>Revisão manual</span></div>
+    </header>
+
+    <nav class="mode-tabs" role="tablist" aria-label="Tipo de busca">
+      <button id="modePhotos" class="mode-tab" role="tab" aria-selected="true" aria-controls="searchPanel"><span data-icon="images"></span>Fotos duplicadas</button>
+      <button id="modeFiles" class="mode-tab" role="tab" aria-selected="false" aria-controls="searchPanel" tabindex="-1"><span data-icon="document"></span>Arquivos duplicados</button>
+    </nav>
+
+    <section class="search-panel" id="searchPanel" role="tabpanel" aria-labelledby="modePhotos">
+      <div class="search-top"><div><h2>Onde procurar</h2><p id="searchDescription">Encontre fotos idênticas e escolha quais cópias manter.</p></div><button class="button primary" id="scanBtn" disabled><span data-icon="search"></span><span id="scanLabel">Buscar duplicadas</span></button></div>
+      <div class="roots-line"><div class="roots" id="roots"></div><button class="button add-folder" id="addFolderBtn" disabled><span data-icon="plus"></span>Adicionar pasta</button></div>
+      <p class="scope-note"><span data-icon="lock"></span>Só arquivos pessoais. Sistema, DLLs, aplicativos e componentes de software ficam fora.</p>
+      <p class="file-types-note" id="fileTypesNote" hidden>Documentos, vídeos, áudios e compactados. Fotos têm uma aba própria.</p>
+    </section>
+
+    <section class="progress-panel" id="progressPanel" hidden aria-live="polite">
+      <div class="progress-title"><span class="activity-dot"></span><strong id="progressTitle">Procurando fotos…</strong><span id="progressCount"></span><button class="text-button" id="cancelBtn">Cancelar busca</button></div>
+      <progress id="scanProgress" aria-label="Progresso da busca"></progress>
+    </section>
+
+    <div class="notice error" id="errorNotice" hidden role="alert"><span data-icon="warning"></span><span id="errorText"></span><button class="notice-close" id="errorClose" aria-label="Fechar aviso">×</button></div>
+    <section class="notice result" id="resultNotice" hidden aria-live="polite"><span data-icon="check"></span><div><strong id="resultTitle"></strong><p id="resultText"></p><ul id="resultDetails" hidden></ul></div><button class="notice-close" id="resultClose" aria-label="Fechar resultado">×</button></section>
+
+    <div class="workspace">
+      <aside class="groups-panel" id="groupsPanel" aria-label="Grupos de fotos duplicadas">
+        <div class="groups-heading"><h2>Grupos encontrados</h2><span id="groupCount">0</span></div>
+        <div class="groups-summary" id="groupsSummary">Sua busca aparecerá aqui</div>
+        <div class="group-list" id="groupList"></div>
+        <div class="sidebar-empty" id="sidebarEmpty"><span data-icon="images"></span><p id="sidebarEmptyText">As cópias de uma mesma foto ficam juntas.</p></div>
+        <div class="sidebar-foot"><span data-icon="shield"></span>Ao menos uma cópia será mantida.</div>
+      </aside>
+
+      <section class="review-panel" id="reviewPanel" aria-label="Revisar fotos">
+        <div class="empty-state" id="emptyState">
+          <div class="photo-stack" id="photoStack" aria-hidden="true"><div class="stack-back"></div><div class="stack-front"><svg viewBox="0 0 160 120" fill="none"><circle cx="116" cy="32" r="12" fill="currentColor" opacity=".65"/><path d="M10 98 53 48l35 40 20-22 42 43H10Z" fill="currentColor" opacity=".32"/><path d="m26 98 27-32 29 32H26Z" fill="currentColor" opacity=".48"/></svg><span class="stack-check" data-icon="check"></span></div></div>
+          <div class="file-stack" id="fileStack" hidden aria-hidden="true"><span data-icon="document"></span><span>PDF · DOCX · ZIP</span></div>
+          <span class="empty-kicker" id="emptyKicker">SÓ AS CÓPIAS QUE VOCÊ ESCOLHER</span>
+          <h2 id="emptyTitle">Dê espaço às suas fotos.</h2>
+          <p id="emptyText">Busque cópias idênticas nas pastas selecionadas.<br />Você revisa cada grupo antes de mover qualquer arquivo.</p>
+          <div class="empty-steps" id="emptySteps"><span><b>1</b>Busque</span><span><b>2</b>Compare</span><span><b>3</b>Escolha</span></div>
+          <div class="photos-help" id="photosHelp"><span data-icon="images"></span><div><strong>Suas fotos estão no app Fotos?</strong><p>Use Duplicatas dentro do próprio app para cuidar da fototeca.</p></div><button class="text-button" id="openPhotosBtn">Abrir Fotos <span aria-hidden="true">↗</span></button></div>
+        </div>
+
+        <div class="group-review" id="groupReview" hidden>
+          <div class="review-heading"><div><span class="eyebrow" id="reviewKicker">CONTEÚDO IDÊNTICO</span><h2 id="reviewTitle"></h2><p id="reviewDescription">Escolha uma cópia para manter ou marque individualmente as que deseja mover.</p></div><span class="review-count" id="reviewCount"></span></div>
+          <div class="photo-grid" id="photoGrid"></div>
+        </div>
+      </section>
+    </div>
+
+    <footer class="selection-bar">
+      <div class="selection-info"><span class="selection-icon" data-icon="trash"></span><div><strong id="selectionTitle">Nenhuma cópia selecionada</strong><p id="selectionDescription">O espaço só fica disponível após esvaziar a Lixeira.</p></div></div>
+      <div class="selection-actions"><button class="text-button" id="clearSelectionBtn" hidden>Limpar seleção</button><button class="button primary" id="trashBtn" disabled><span data-icon="trash"></span><span id="trashLabel">Mover para a Lixeira</span></button></div>
+    </footer>
+    <div class="screen-reader" id="liveStatus" role="status" aria-live="polite"></div>
+  </main>
+
+  <dialog id="confirmDialog" aria-labelledby="confirmTitle" aria-describedby="confirmText">
+    <div class="dialog-icon" data-icon="trash"></div><h2 id="confirmTitle">Mover as cópias para a Lixeira?</h2><p id="confirmText"></p>
+    <div class="confirmation-note"><span data-icon="shield"></span><span>Ao menos uma cópia de cada grupo será mantida. A Lixeira não será esvaziada.</span></div>
+    <div class="dialog-actions"><button class="button secondary" id="confirmCancel">Cancelar</button><button class="button primary" id="confirmMove">Mover para a Lixeira</button></div>
+  </dialog>
+  <script src="photos.js"></script>
+</body>
+</html>

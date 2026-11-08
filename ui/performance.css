@@ -1,0 +1,73 @@
+.performance-tool { min-width: 0; color: var(--text); font: 12px/1.4 var(--font); }
+.performance-tool.performance-panel { display: grid; gap: 8px; padding: 3px 0; }
+.performance-tool .performance-heading { display: flex; justify-content: space-between; align-items: start; gap: 10px; }
+.performance-tool .performance-heading > div { min-width: 0; }
+.performance-tool .performance-heading h2 { font-size: 16px; font-weight: 600; letter-spacing: -.25px; }
+.performance-tool .performance-heading p { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.performance-tool .performance-button { flex: none; min-height: 30px; padding: 5px 8px; border: 1px solid var(--stroke); border-radius: 6px; background: var(--card); color: var(--text); font: 500 11px/1.35 var(--font); text-align: center; }
+.performance-tool .performance-button:hover:not(:disabled) { background: var(--card-hi); }
+.performance-tool .performance-primary { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
+.performance-tool .performance-primary:hover:not(:disabled) { background: var(--accent); filter: brightness(.96); }
+.performance-tool .performance-danger { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 45%, var(--stroke)); }
+.performance-tool .performance-primary.performance-danger { background: var(--crit); color: var(--bg); }
+.performance-tool button:disabled { opacity: .5; cursor: default; }
+.performance-tool .performance-pressure { padding: 9px 10px; border: 1px solid var(--stroke); border-radius: 8px; background: var(--card); }
+.performance-tool .performance-pressure strong { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; }
+.performance-tool .performance-pressure strong::before { content: ''; display: block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.performance-tool .performance-pressure[data-level="normal"] strong::before { background: var(--ok); }
+.performance-tool .performance-pressure[data-level="warning"] strong::before { background: var(--warn); }
+.performance-tool .performance-pressure[data-level="critical"] strong::before { background: var(--crit); }
+.performance-tool .performance-pressure p { margin-top: 3px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.performance-tool .performance-note { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.performance-tool .performance-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(84px, .45fr); gap: 8px; }
+.performance-tool .performance-filters label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: 11px; }
+.performance-tool .performance-filters input, .performance-tool .performance-filters select { display: block; width: 100%; min-width: 0; min-height: 30px; padding: 5px 7px; border: 1px solid var(--stroke); border-radius: 6px; background: var(--card); color: var(--text); font: 12px var(--font); }
+.performance-tool .performance-filters input { user-select: text; }
+.performance-tool .performance-filters input::placeholder { color: var(--muted); opacity: 1; }
+.performance-tool .performance-list-frame { min-width: 0; border: 1px solid var(--stroke); border-radius: 8px; overflow: hidden; background: var(--card); }
+.performance-tool .performance-list { max-height: clamp(148px, 35vh, 260px); padding: 0; list-style: none; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
+.performance-tool .performance-list > li + li { border-top: 1px solid transparent; }
+.performance-tool .performance-list > li:nth-child(even) { background: var(--card-hi); }
+.performance-tool .performance-columns, .performance-tool .performance-process-row { display: grid; grid-template-columns: 24px minmax(0,1fr) 42px 60px 66px; gap: 6px; align-items: center; padding: 6px 8px; }
+.performance-tool .performance-columns { border-bottom: 1px solid var(--stroke); color: var(--muted); font-size: 10px; text-align: right; }
+.performance-tool .performance-column-name { grid-column: span 2; text-align: left; }
+.performance-tool .performance-process-row, .performance-tool .performance-service-row { display: flex; align-items: center; gap: 7px; width: 100%; min-width: 0; padding: 8px; }
+.performance-tool .performance-process-row { display: grid; gap: 6px; padding: 6px 8px; min-height: 46px; }
+.performance-tool .performance-process-icon { display: grid; place-items: center; flex: none; width: 25px; height: 25px; border-radius: 6px; background: var(--chip); color: var(--accent); }
+.performance-tool .performance-process-icon svg { width: 18px; height: 18px; fill: none; }
+.performance-tool .performance-process-icon.has-icon { background: transparent; }
+.performance-tool .performance-process-icon img { display: block; width: 24px; height: 24px; object-fit: contain; }
+.performance-tool .performance-row-body { display: grid; flex: 1; min-width: 0; gap: 1px; }
+.performance-tool .performance-row-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 500; }
+.performance-tool .performance-row-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--muted); }
+.performance-tool .performance-metrics { font-size: 11px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.performance-tool .performance-cpu, .performance-tool .performance-memory { text-align: right; white-space: nowrap; font-size: 10.5px; }
+.performance-tool .performance-protected { flex: none; max-width: 61px; color: var(--muted); font-size: 10px; }
+.performance-tool .performance-empty { padding: 14px 9px; color: var(--muted); text-align: center; font-size: 11px; }
+.performance-tool .performance-section-title { margin-top: 5px; font-size: 13px; font-weight: 600; }
+.performance-tool .performance-services { max-height: 170px; }
+.performance-tool .performance-error { color: var(--warn); font-size: 11px; overflow-wrap: anywhere; }
+.performance-tool .performance-status { padding: 8px; border: 1px solid var(--stroke); border-radius: 6px; background: var(--card); color: var(--muted); font-size: 11px; overflow-wrap: anywhere; user-select: text; }
+.performance-tool .performance-status[data-kind="warning"], .performance-tool .performance-status[data-kind="error"] { color: var(--warn); }
+.performance-tool .performance-status[data-kind="success"] { color: var(--ok); }
+.performance-tool.performance-dialog-layer { position: fixed; inset: 0; z-index: 42; display: grid; place-items: center; padding: 12px; background: light-dark(#20282055, #00000088); }
+.performance-tool .performance-dialog { display: grid; gap: 10px; width: 100%; max-width: 396px; max-height: calc(100vh - 24px); padding: 16px; border: 1px solid var(--stroke); border-radius: 9px; overflow-y: auto; background: var(--card); box-shadow: 0 8px 32px light-dark(#10201822, #00000055); }
+.performance-tool .performance-dialog h2 { font-size: 15px; font-weight: 600; }
+.performance-tool .performance-confirm-name { font-weight: 600; font-size: 13px; overflow-wrap: anywhere; }
+.performance-tool .performance-confirm-description { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.performance-tool .performance-confirm-warning { color: var(--warn); font-size: 12px; overflow-wrap: anywhere; }
+.performance-tool .performance-dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+.performance-tool .performance-dialog-actions button { flex: 1; min-width: 0; min-height: 34px; white-space: normal; }
+.performance-tool button:focus-visible, .performance-tool input:focus-visible, .performance-tool select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 350px) {
+  .performance-tool .performance-heading { gap: 6px; }
+  .performance-tool .performance-heading h2 { font-size: 15px; }
+  .performance-tool .performance-button { padding: 5px 6px; }
+  .performance-tool .performance-process-row, .performance-tool .performance-service-row { gap: 6px; padding: 7px 6px; }
+  .performance-tool .performance-process-row, .performance-tool .performance-columns { grid-template-columns: 22px minmax(0,1fr) 36px 51px 57px; gap: 4px; padding: 6px; }
+  .performance-tool .performance-process-row .performance-button { font-size: 10px; padding: 5px 3px; }
+  .performance-tool .performance-cpu, .performance-tool .performance-memory { font-size: 10px; }
+  .performance-tool .performance-process-icon { width: 22px; height: 22px; }
+  .performance-tool .performance-row-meta { font-size: 10px; }
+  .performance-tool .performance-dialog { padding: 13px; }
+}

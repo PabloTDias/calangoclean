@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'" />
+  <title>CalangoClean</title>
+  <link rel="stylesheet" href="theme.css" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="applications.css" />
+  <link rel="stylesheet" href="performance.css" />
+  <link rel="stylesheet" href="privacy.css" />
+</head>
+<body>
+  <main class="app">
+    <header class="top">
+      <div class="brand">
+        <span class="brand-mark"></span>
+        <h1>CalangoClean</h1>
+      </div>
+      <div class="top-actions">
+        <span class="pill pill-sim" id="simPill" hidden data-tip="Nada será apagado">
+          <i class="dot"></i>Simulação
+        </span>
+        <button class="icon-btn" id="quitBtn" data-tip="Sair" aria-label="Sair" data-icon="quit"></button>
+      </div>
+    </header>
+
+    <div class="banner" id="updateBanner" hidden aria-live="polite">
+      <span class="banner-text" id="updateText"></span>
+      <button class="mini solid" id="updateDownload">Baixar atualização</button>
+    </div>
+
+    <section class="health" id="health" data-state="ok" aria-live="polite">
+      <div class="health-line">
+        <span class="health-label">Saúde do disco:</span>
+        <span class="health-state"><i class="hdot"></i><b id="healthText">--</b></span>
+      </div>
+      <div class="machine" id="machine">&nbsp;</div>
+    </section>
+
+    <section class="disk card" id="disk" data-state="ok" role="button" tabindex="0" aria-expanded="false" data-tip="Clique para ver o que ocupa espaço no disco" data-tip-pos="top">
+      <div class="disk-row">
+        <div class="disk-ico" data-icon="hardDrive"></div>
+        <strong class="disk-name" id="volName">Macintosh HD</strong>
+        <div class="avail"><b id="freeValue">--</b><span>disponível</span></div>
+        <span class="disk-caret" data-icon="caretDown"></span>
+      </div>
+      <div class="bar" role="progressbar" aria-label="Ocupação do disco" id="bar">
+        <i id="barFill"></i>
+        <u class="t80"></u><u class="t90"></u>
+      </div>
+      <div class="usage">
+        <span>Usado <b id="usedValue">--</b> / Total <b id="totalValue">--</b></span>
+        <b class="pct" id="pctValue">--</b>
+      </div>
+    </section>
+
+    <section class="disk-detail card" id="diskDetail" hidden>
+      <div class="dd-body" id="ddBody">
+        <div class="donut" id="donut"></div>
+        <ul class="dd-list" id="ddList"></ul>
+      </div>
+      <div class="dd-prog" id="ddProg" hidden>
+        <span>Analisando… pode levar alguns minutos</span>
+        <div class="net-bar"><i></i></div>
+      </div>
+      <div class="dd-foot">
+        <span id="ddWhen"></span>
+        <span class="dd-actions">
+          <button class="link" id="ddCancel" hidden>Cancelar</button>
+          <button class="link" id="ddRun">Analisar de novo</button>
+        </span>
+      </div>
+    </section>
+
+    <div class="chips" id="chips" role="group" aria-label="Discos externos, Bluetooth e rede"></div>
+
+    <section class="chip-detail card" id="chipDetail" hidden>
+      <div id="detailVol" hidden></div>
+      <div id="detailNet" hidden>
+        <div class="nd-head">
+          <div class="net-ico" id="netIco"></div>
+          <div class="net-main"><strong id="netType">--</strong><span id="netName"></span></div>
+          <b class="net-ip" id="netIp">--</b>
+        </div>
+        <div class="nd-foot">
+          <button class="mini solid net-btn" id="speedBtn" data-tip="Mede download, upload e latência (~20 s). Só roda quando você clica."><span class="net-btn-ico" data-icon="gauge"></span><span id="speedLabel">Testar velocidade</span></button>
+          <div class="nd-out">
+            <div class="net-prog" id="speedProg" hidden><span>Medindo download, upload e latência… (~20 s)</span><div class="net-bar"><i></i></div></div>
+            <div class="net-result" id="speedResult" hidden>
+              <span data-tip="Download"><i data-icon="arrowDown"></i><b id="spDown">--</b></span>
+              <span data-tip="Upload"><i data-icon="arrowUp"></i><b id="spUp">--</b></span>
+              <span data-tip="Latência"><i data-icon="timer"></i><b id="spLat">--</b></span>
+            </div>
+            <div class="net-err" id="speedErr" hidden></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="banner" id="permBanner" hidden>
+      <span class="banner-ico" data-icon="warning"></span>
+      <span class="banner-text" id="permText">Algumas pastas precisam de Acesso Total ao Disco.</span>
+      <button class="mini solid" id="permBtn">Dar acesso</button>
+    </div>
+
+    <div class="scroll" id="scroll">
+
+      <button class="photo-tool" id="photosBtn" aria-label="Abrir busca de fotos e arquivos duplicados">
+        <span class="photo-tool-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="5" width="15" height="15" rx="3"/><path d="M7 2h11a3 3 0 0 1 3 3v11M3 16l4-4 4 4 3-3 4 4"/><circle cx="12" cy="10" r="1.5"/></svg></span>
+        <span class="photo-tool-copy"><strong>Fotos e arquivos duplicados</strong><span>Encontre cópias idênticas e escolha o que manter</span></span>
+        <span class="photo-tool-arrow" aria-hidden="true">↗</span>
+      </button>
+
+      <div class="section-head">
+        <h2>Candidatos a limpeza</h2>
+        <button class="link" id="toggleAll">Desmarcar tudo</button>
+      </div>
+      <ul class="cats" id="cats"></ul>
+      <ul class="cats" id="featured" hidden></ul>
+
+      <button class="fold" id="infoToggle" aria-expanded="false" aria-controls="infos" hidden>
+        <span>Para revisar</span><span class="count" id="infoCount">0</span>
+        <span class="chev" data-icon="caretDown"></span>
+      </button>
+      <ul class="cats" id="infos" hidden></ul>
+
+      <div class="section-head sched-head"><h2>Agendamento</h2></div>
+      <section class="sched card" id="sched">
+        <div class="sched-row">
+          <div class="cat-icon" data-icon="calendar"></div>
+          <div class="cat-body">
+            <div class="cat-name"><span class="n">Limpeza automática</span></div>
+            <div class="cat-desc" id="schedSummary">--</div>
+          </div>
+          <label class="switch"><input type="checkbox" id="schedOn" aria-label="Ligar agendamento" /><i></i></label>
+        </div>
+        <div class="sched-controls" id="schedControls" hidden>
+          <label>Dia
+            <select id="schedDay">
+              <option value="0">Domingo</option><option value="1">Segunda</option><option value="2">Terça</option>
+              <option value="3">Quarta</option><option value="4">Quinta</option><option value="5">Sexta</option>
+              <option value="6">Sábado</option>
+            </select>
+          </label>
+          <label>Hora <input type="time" id="schedTime" value="08:30" /></label>
+        </div>
+        <div class="sched-err" id="schedErr" hidden></div>
+      </section>
+
+      <section class="result card" id="result" hidden></section>
+    </div>
+
+    <footer class="bottom">
+      <div class="total">
+        <span id="totalLabel">Selecionado</span>
+        <strong id="totalSel">0 B</strong>
+      </div>
+      <div class="actions">
+        <button class="ghost" id="refreshBtn"><span data-icon="refresh"></span>Analisar</button>
+        <button class="cta" id="cleanBtn" disabled>
+          <span class="cta-label" id="ctaLabel">Limpar</span>
+          <span class="spinner" aria-hidden="true"></span>
+        </button>
+      </div>
+    </footer>
+
+    <div class="update-row">
+      <span id="appVersion"></span>
+      <button class="link" id="updateCheck">Verificar atualizações</button>
+    </div>
+    <div class="update-status" id="updateStatus" hidden role="status"></div>
+    <div class="credit-row">
+      <button class="credit" id="creditBtn" data-tip="Abrir sejacalango.com.br no navegador"><i class="credit-logo" aria-hidden="true"></i><span>por Seja Calango</span></button>
+    </div>
+
+    <div class="scrim" id="confirm" hidden>
+      <div class="sheet card" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
+        <div class="sheet-title"><h3 id="confirmTitle">Confirmar limpeza</h3><button type="button" class="confirm-close" id="confirmCancel" aria-label="Cancelar limpeza">×</button></div>
+        <p id="confirmText"></p>
+        <p id="confirmBrowsers" class="browser-warning" hidden></p>
+        <p id="confirmSkipHint" hidden></p>
+        <div class="sheet-actions">
+          <button class="ghost" id="confirmSkipBrowser" hidden>Limpar sem fechar navegadores</button>
+          <button class="cta small" id="confirmOk">Limpar</button>
+        </div>
+      </div>
+    </div>
+  </main>
+  <script src="icons.js"></script>
+  <script src="applications.js"></script>
+  <script src="performance.js"></script>
+  <script src="privacy.js"></script>
+  <script src="renderer.js"></script>
+</body>
+</html>

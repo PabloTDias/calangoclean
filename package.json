@@ -1,0 +1,63 @@
+{
+  "name": "calangoclean",
+  "version": "0.4.3",
+  "description": "Analisa e limpa o Mac direto da barra de menu",
+  "main": "src/main.js",
+  "private": true,
+  "scripts": {
+    "start": "env -u ELECTRON_RUN_AS_NODE electron .",
+    "dist": "node scripts/dist.js",
+    "install:local": "node scripts/install-local.js",
+    "preview:photos": "env -u ELECTRON_RUN_AS_NODE electron scripts/preview-photos.js",
+    "test": "node --test tests/*.test.js",
+    "test:ui": "env -u ELECTRON_RUN_AS_NODE electron scripts/check-ui.cjs"
+  },
+  "devDependencies": {
+    "electron": "^45.2.1",
+    "electron-builder": "^26.18.0"
+  },
+  "dependencies": {
+    "menubar": "^9.5.3"
+  },
+  "author": "Pablo",
+  "build": {
+    "appId": "com.sejacalango.calangoclean",
+    "productName": "CalangoClean",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "ui/**/*",
+      "assets/iconTemplate.png",
+      "assets/iconTemplate@2x.png",
+      "assets/completion.wav",
+      "package.json"
+    ],
+    "asarUnpack": ["assets/completion.wav"],
+    "mac": {
+      "category": "public.app-category.utilities",
+      "icon": "build/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "identity": "-",
+      "artifactName": "${productName}-${version}-universal.${ext}",
+      "extendInfo": {
+        "LSUIElement": true,
+        "NSAppleEventsUsageDescription": "O CalangoClean precisa controlar o Finder para medir e esvaziar a Lixeira e, após sua confirmação, fechar navegadores para limpar seus caches."
+      },
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false
+    },
+    "dmg": {
+      "title": "CalangoClean ${version}"
+    }
+  }
+}

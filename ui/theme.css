@@ -1,0 +1,18 @@
+/* Paleta compartilhada pelo painel e por todas as ferramentas. */
+:root {
+  color-scheme: light dark;
+  --accent: light-dark(#8d41b8,#c48bf0);
+  --accent-ink: light-dark(#fff,#2a0a30);
+  --ok: light-dark(#24794e,#7bdba6);
+  --warn: light-dark(#916014,#fbbf24);
+  --crit: light-dark(#ba3540,#f88d94);
+  --bg: light-dark(#fafbfa,#202320);
+  --text: light-dark(#242a26,#edf1ee);
+  --muted: light-dark(#606b63,#aab6ad);
+  --card: light-dark(#fff,#292e2a);
+  --card-hi: light-dark(#f0f3f0,#343b35);
+  --stroke: light-dark(#dce2dd,#414943);
+  --track: light-dark(#dfe5df,#424c44);
+  --chip: light-dark(#eedff5,#47364e);
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+}
