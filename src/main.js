@@ -10,6 +10,7 @@ const browsers = require('./browsers');
 const cleaner = require('./cleaner').create({ categories, browsers });
 const scheduler = require('./scheduler');
 const volumes = require('./volumes');
+const volumeFolders = require('./volumeFolders').create({ listVolumes: () => volumes.list() });
 const network = require('./network');
 const bluetooth = require('./bluetooth');
 const folders = require('./folders');
@@ -23,9 +24,22 @@ const appIcons = require('./appIcons');
 const completionSound = require('./completionSound');
 const privacy = require('./privacy');
 const updateChecker = updates.create({ version: app.getVersion() });
+const updateInstaller = require('./updateInstaller');
 const notifiedVersions = new Set();
 let photos = null;
 const mutations = require('./mutationGate').create();
+// Só existe app instalado (CalangoClean.app) quando empacotado; em desenvolvimento a atualização é recusada.
+const installer = updateInstaller.create({
+  appBundle: app.isPackaged ? path.resolve(app.getPath('exe'), '..', '..', '..') : null,
+  version: app.getVersion(),
+  appDir: config.APP_DIR,
+  historyFile: config.HISTORY_FILE,
+  mutations,
+  log: ({ note, status }) => config.appendHistory({ source: 'update', id: 'appUpdate', dryRun: false, freedBytes: 0,
+    skipped: false, status, reason: status === 'failed' ? 'atualização' : undefined, note }),
+  quit: () => { app.quit(); setTimeout(() => app.exit(0), 5000); },
+});
+let lastUpdateResult = null;
 
 // A Lixeira comum e a revisão de fotos não podem modificar arquivos ao mesmo tempo.
 const withMutation = (fn, options) => mutations.run(fn, options);
@@ -72,6 +86,7 @@ const mb = menubar({
   tooltip: 'CalangoClean',
   windowPosition: 'trayCenter',
   browserWindow: {
+    icon: path.join(__dirname, '..', 'ui', 'app-icon.png'),
     width: WIN_W,
     height: WIN_H,
     resizable: false,
@@ -154,7 +169,7 @@ function registerIpc() {
   ipcMain.handle('feedback:complete', event => {
     assertPanelSender(event);return completionFeedback.complete();
   });
-  // Nenhuma coleta acontece na inicialização: somente ao abrir Desempenho ou atualizar.
+  // O renderer solicita as métricas enquanto Desempenho está visível; não há coleta na inicialização.
   const icons = appIcons.create({ getFileIcon: (...args) => app.getFileIcon(...args) });
   const privacyManager = privacy.create({getIcon:bundle=>icons.get(bundle)});
   ipcMain.handle('privacy:browsers',event=>{assertPanelSender(event);return privacyManager.list();});
@@ -166,6 +181,11 @@ function registerIpc() {
   ipcMain.handle('performance:list', async event => {
     assertPanelSender(event);
     return performanceManager.list();
+  });
+  ipcMain.handle('performance:metrics', async event => {
+    assertPanelSender(event);
+    if (!mb.window.isVisible()) return { ok: false, code: 'HIDDEN', error: 'O painel está oculto.' };
+    return performanceManager.metrics();
   });
   ipcMain.handle('performance:prepare-process', async (event, pid, options = {}) => {
     assertPanelSender(event);
@@ -257,6 +277,8 @@ function registerIpc() {
       disk: { ...info, volume },
       machine,
       updates: updateChecker.getState(),
+      updateResult: lastUpdateResult,
+      fullDiskAccess: lastUpdateResult ? await disk.hasFullDiskAccess().catch(() => true) : true,
       categories: categories.describeAll().map((c) => ({
         ...c,
         enabled: cfg.categories[c.id] ?? c.defaultEnabled,
@@ -271,14 +293,16 @@ function registerIpc() {
   });
 
   ipcMain.handle('updates:check', () => checkUpdates(true));
-  ipcMain.handle('updates:download', async () => {
-    // O renderer não fornece URL: só abre o DMG validado da última consulta.
-    const url = updates.downloadUrl(updateChecker.getState().available?.url);
-    if (!url) return { ok: false, error: 'Nenhuma atualização disponível.' };
-    try {
-      await shell.openExternal(url);
-      return { ok: true };
-    } catch { return { ok: false, error: 'Não foi possível abrir o download.' }; }
+  ipcMain.handle('updates:install', async (event) => {
+    // Só por clique no painel; o renderer não manda URL, hash nem caminho: tudo vem da última consulta.
+    if (!mb.window || event.sender !== mb.window.webContents || event.senderFrame !== mb.window.webContents.mainFrame) {
+      return { ok: false, error: 'Atualize pelo painel do CalangoClean.' };
+    }
+    const available = updateChecker.getState().available;
+    if (!available) return { ok: false, error: 'Nenhuma atualização disponível.' };
+    return installer.install(available, (p) => {
+      if (mb.window && !mb.window.isDestroyed()) mb.window.webContents.send('updates:progress', p);
+    });
   });
 
   // Abrir o app de uma categoria (hoje só o WhatsApp). Ação fixa da própria categoria; não apaga nada.
@@ -357,6 +381,9 @@ function registerIpc() {
   // Discos externos: somente leitura. A única ação é ejetar, validada contra a listagem atual.
   ipcMain.handle('volumes:list', () => volumes.list());
   ipcMain.handle('volumes:eject', (_e, id) => volumes.eject(String(id)));
+  ipcMain.handle('volumes:folders-last', (event, id) => { assertPanelSender(event); return volumeFolders.last(id); });
+  ipcMain.handle('volumes:folders-analyze', (event, id) => { assertPanelSender(event); return volumeFolders.analyze(id); });
+  ipcMain.handle('volumes:folders-cancel', (event, id) => { assertPanelSender(event); volumeFolders.cancel(id); return { ok: true }; });
 
   // Rede: leitura leve sempre; o teste de velocidade SÓ roda por clique (nunca automático, nunca no agendamento).
   ipcMain.handle('network:info', () => network.getInfo());
@@ -448,6 +475,7 @@ function watchTrayPosition() {
 }
 
 mb.on('ready', async () => {
+  if (isDev) app.dock?.setIcon(path.join(__dirname, '..', 'ui', 'app-icon.png'));
   // Primeira abertura após o renome limpa-mac -> calangoclean: copia os dados e remove o LaunchAgent antigo
   // ANTES de ler o config e de instalar o agente novo.
   await migrate.run().catch((e) => console.warn('[migrate] falhou:', e.message));
@@ -455,6 +483,7 @@ mb.on('ready', async () => {
   await appearanceController.initialize().then((state) => {
     if (state.error) console.warn(`[appearance] ${state.error} Usando aparência automática sem gravar.`);
   }).catch((e) => console.warn('[appearance] falhou:', e.message));
+  lastUpdateResult = await installer.takeResult();
   registerIpc();
   config.cleanLegacy().catch(() => {});
   // Mantém o launchd de acordo com o config (caminho do app mudou, agente descarregado etc.).
@@ -466,15 +495,14 @@ mb.on('ready', async () => {
   }
   watchTrayPosition();
   checkUpdates().catch(() => {});
-  const updateTimer = setInterval(() => checkUpdates().catch(() => {}), updates.INTERVAL);
-  mb.app.on('before-quit', () => clearInterval(updateTimer));
+  mb.app.on('before-quit', () => installer.cancel());
 
   // Avisa o painel quando um disco externo entra/sai (fs.watch em /Volumes + polling de 5 s com a janela aberta).
   const stopVolumes = volumes.watch(
     (list) => { if (mb.window && !mb.window.isDestroyed()) mb.window.webContents.send('volumes:changed', list); },
     { isActive: () => Boolean(mb.window && !mb.window.isDestroyed() && mb.window.isVisible()) },
   );
-  mb.app.on('before-quit', () => { stopVolumes(); network.cancel(); folders.cancel(); photos?.destroy(); appearanceController.dispose(); });
+  mb.app.on('before-quit', () => { stopVolumes(); network.cancel(); folders.cancel(); volumeFolders.cancel(); photos?.destroy(); appearanceController.dispose(); });
 });
 
 mb.on('after-create-window', () => {
@@ -506,4 +534,12 @@ mb.on('show', () => {
   );
 });
 
-mb.on('after-show', () => mb.window.webContents.send('window:shown'));
+mb.on('after-show', () => {
+  mb.window.webContents.send('window:shown');
+  // No máximo uma consulta a cada 6 h (o limite fica em updates.js).
+  checkUpdates().catch(() => {});
+});
+
+mb.on('after-hide', () => {
+  if (mb.window && !mb.window.isDestroyed()) mb.window.webContents.send('window:hidden');
+});

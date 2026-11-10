@@ -9,10 +9,10 @@ const { create, parseProcesses } = require('../src/performance');
 const UID = process.getuid();
 function processRow(pid = 42, overrides = {}) {
   return { pid, ppid: 1, uid: UID, ruid: UID, svuid: UID, cpu: 17.3, rss: 2048,
-    elapsed: '01:02:03', started: 'Sat Nov  7 20:28:23 2026', executable: '/Applications/Example.app/Contents/MacOS/Example', ...overrides };
+    elapsed: '01:02:03', started: 'Sat Nov  7 20:28:23 2026', cpuTime: '00:10.00', executable: '/Applications/Example.app/Contents/MacOS/Example', ...overrides };
 }
 function output(rows) {
-  return rows.map(row => ` ${row.pid} ${row.ppid} ${row.uid} ${row.ruid} ${row.svuid} ${row.cpu} ${row.rss} ${row.elapsed} ${row.started} ${row.executable}`).join('\n');
+  return rows.map(row => ` ${row.pid} ${row.ppid} ${row.uid} ${row.ruid} ${row.svuid} ${row.cpu} ${row.rss} ${row.elapsed} ${row.started} ${row.cpuTime} ${row.executable}`).join('\n');
 }
 async function fixture(t, overrides = {}) {
   const home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'calango-performance-')));
@@ -24,8 +24,14 @@ async function fixture(t, overrides = {}) {
     processRow(1000, { executable: '/Applications/Terminal.app/Contents/MacOS/Terminal' }),
     processRow(9999, { ppid: 1000, executable: '/Applications/CalangoClean.app/Contents/MacOS/CalangoClean' }),
     processRow(),
-  ], commands: [], signals: [], jobs: new Map(), killError: null, psError: false, onSignal: null };
+  ], commands: [], signals: [], jobs: new Map(), killError: null, psError: false, onSignal: null, cpuReads: 0, memoryReads: 0, sampleWaits: [] };
   const options = { home, uid: UID, selfPid: 9999, selfPath: '/Applications/CalangoClean.app', now: () => state.now,
+    getCpus: () => {
+      const sample = state.cpuReads++;
+      return [{ times: { user: sample * 25, nice: 0, sys: 0, idle: sample * 75, irq: 0 } }];
+    },
+    getMemoryInfo: () => { state.memoryReads++; return { total: 16 * 1024 ** 3, free: 4 * 1024 ** 3 }; },
+    waitForCpuSample: async ms => { state.sampleWaits.push(ms); },
     run: async (command, args) => {
       state.commands.push({ command, args });
       if (command === '/bin/ps') {
@@ -80,6 +86,7 @@ test('interpreta ps do macOS com espaços no app, RSS em KiB e dias de execuçã
   assert.equal(rows[0].memoryBytes, 2097152);
   assert.equal(rows[0].elapsedSeconds, 183845);
   assert.equal(rows[0].cpu, 17.3);
+  assert.equal(rows[0].cpuSeconds, 10);
   assert.throws(() => parseProcesses('resposta inválida'));
   assert.throws(() => parseProcesses(output([processRow(), processRow()])));
 });
@@ -87,13 +94,292 @@ test('interpreta ps do macOS com espaços no app, RSS em KiB e dias de execuçã
 test('lista métricas só por chamada, sem expor executáveis nem início ao renderer', async t => {
   const f = await fixture(t);
   assert.equal(f.state.commands.length, 0);
+  assert.equal(f.state.cpuReads, 0);
+  assert.equal(f.state.memoryReads, 0);
   const result = await f.manager.list();
   assert.equal(result.ok, true);
   assert.equal(result.processes.find(row => row.pid === 42).canTerminate, true);
   assert.deepEqual(result.memoryPressure, { level: 'normal', freePercent: 37 });
+  assert.deepEqual(result.systemMetrics, { cpuPercent: 25, memoryUsedBytes: 12 * 1024 ** 3, memoryTotalBytes: 16 * 1024 ** 3 });
+  assert.equal(f.state.cpuReads, 2);
+  assert.equal(f.state.memoryReads, 1);
+  assert.deepEqual(f.state.sampleWaits, [200]);
   assert.equal(JSON.stringify(result).includes('/Applications/'), false);
   assert.equal(f.state.signals.length, 0);
   assert.equal(f.state.commands.filter(call => call.command === '/bin/ps').length, 1);
+});
+
+test('consulta automática atualiza processos CPU RAM e pressão sem serviços ou sinais', async t => {
+  let iconReads = 0;
+  const f = await fixture(t, { getIcon: async () => { iconReads++; return null; } });
+  await f.agent();
+  const result = await f.manager.metrics();
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.systemMetrics, { cpuPercent: 25, memoryUsedBytes: 12 * 1024 ** 3, memoryTotalBytes: 16 * 1024 ** 3 });
+  assert.deepEqual(result.memoryPressure, { level: 'normal', freePercent: 37 });
+  assert.equal(result.sampledAt, new Date(f.state.now).toISOString());
+  assert.deepEqual(f.state.commands.map(call => call.command).sort(), ['/bin/ps', '/usr/bin/memory_pressure', '/usr/sbin/sysctl']);
+  assert.equal(result.processes.find(row => row.pid === 42).name, 'Example');
+  assert.equal(Object.hasOwn(result, 'services'), false);
+  assert.equal(iconReads, 3);
+  assert.deepEqual(f.state.signals, []);
+});
+
+test('consultas de métricas sobrepostas compartilham uma amostra e liberam a próxima', async t => {
+  let release;
+  const f = await fixture(t, { waitForCpuSample: () => new Promise(resolve => { release = resolve; }) });
+  const first = f.manager.metrics();
+  const second = f.manager.metrics();
+  assert.equal(first, second);
+  assert.equal(f.state.cpuReads, 1);
+  release();
+  assert.equal((await first).systemMetrics.cpuPercent, 25);
+  assert.equal((await second).ok, true);
+  assert.equal(f.state.cpuReads, 2);
+  const third = f.manager.metrics();
+  assert.notEqual(third, first);
+  release();
+  await third;
+  assert.equal(f.state.cpuReads, 4);
+  assert.equal(f.state.commands.length, 4, 'pressão é reutilizada enquanto processos e CPU continuam atualizando');
+});
+
+test('atualização manual aguarda telemetria pendente e novas métricas compartilham o snapshot manual', async t => {
+  let release;
+  let released = false;
+  const barrier = new Promise(resolve => { release = () => { released = true; resolve(); }; });
+  const f = await fixture(t, { getIcon: async () => { if (!released) await barrier; return null; } });
+  const old = f.manager.metrics();
+  await new Promise(setImmediate);
+  const manual = f.manager.list();
+  const joined = f.manager.metrics();
+  assert.equal(f.state.commands.filter(call => call.command === '/bin/ps').length, 1);
+  f.state.rows.find(item => item.pid === 42).rss = 8192;
+  release();
+  assert.equal((await old).processes.find(item => item.pid === 42).memoryBytes, 2 * 1024 ** 2);
+  assert.equal((await manual).processes.find(item => item.pid === 42).memoryBytes, 8 * 1024 ** 2);
+  const joinedResult = await joined;
+  assert.equal(joinedResult.processes.find(item => item.pid === 42).memoryBytes, 8 * 1024 ** 2);
+  assert.equal(Object.hasOwn(joinedResult, 'services'), false);
+  assert.equal(f.state.commands.filter(call => call.command === '/bin/ps').length, 2);
+});
+
+test('métricas automáticas preservam confirmações de processo e serviço em revisão', async t => {
+  const f = await fixture(t);
+  await f.agent();
+  const listed = await f.manager.list();
+  const processRequest = await f.processConsent(true);
+  const serviceRequest = await f.serviceConsent(listed.services[0].id, true);
+  const before = f.state.commands.length;
+  await f.manager.metrics();
+  await f.manager.metrics();
+  assert.ok(f.state.commands.slice(before).every(call => ['/bin/ps', '/usr/bin/memory_pressure', '/usr/sbin/sysctl'].includes(call.command)));
+  assert.equal((await f.manager.terminate(processRequest, { dryRun: true })).simulated, true);
+  assert.equal((await f.manager.unloadService(serviceRequest, { dryRun: true })).simulated, true);
+  assert.deepEqual(f.state.signals, []);
+});
+
+test('agrupa o bundle externo e soma CPU e RSS dos auxiliares sem confundir instalações', async t => {
+  const icons = [];
+  const f = await fixture(t, { getIcon: async bundle => { icons.push(bundle); return null; } });
+  f.state.rows.push(
+    processRow(43, { ppid: 42, cpu: 2.7, rss: 1024, executable: '/Applications/Example.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper' }),
+    processRow(44, { cpu: 1, rss: 512, executable: '/Users/Shared/Example.app/Contents/MacOS/Example' }),
+  );
+  const listed = await f.manager.list();
+  const group = listed.processes.find(item => item.pid === 42);
+  assert.deepEqual(group.pids, [42, 43]);
+  assert.equal(group.processCount, 2);
+  assert.equal(group.isAppGroup, true);
+  assert.equal(group.cpu, 20);
+  assert.equal(group.memoryBytes, 3 * 1024 ** 2);
+  assert.equal(listed.processes.some(item => item.pid === 43), false);
+  assert.notEqual(group.id, listed.processes.find(item => item.pid === 44).id);
+  assert.equal(icons.filter(bundle => bundle === '/Applications/Example.app').length, 1);
+  assert.equal(JSON.stringify(listed).includes('/Applications/'), false);
+});
+
+test('CPU e processos atualizam em meio segundo sem repetir consulta de pressão antes de cinco segundos', async t => {
+  const f = await fixture(t);
+  await f.manager.metrics();
+  const pressureReads = () => f.state.commands.filter(item => item.command === '/usr/bin/memory_pressure').length;
+  assert.equal(pressureReads(), 1);
+  f.state.now += 500;
+  f.state.rows.find(row => row.pid === 42).cpuTime = '00:10.25';
+  const next = await f.manager.metrics();
+  assert.equal(next.processes.find(item => item.pid === 42).cpu, 50);
+  assert.equal(pressureReads(), 1);
+  f.state.now += 4500;
+  await f.manager.metrics();
+  assert.equal(pressureReads(), 2);
+});
+
+test('agrupamento mantém processos protegidos fora da ação e ID estável quando muda o representante', async t => {
+  const f = await fixture(t);
+  f.state.rows.push(
+    processRow(43, { ppid: 42, executable: '/Applications/Example.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper' }),
+    processRow(44, { uid: UID + 1 }),
+  );
+  const first = await f.manager.list();
+  const group = first.processes.find(item => item.pid === 42);
+  assert.deepEqual(group.pids, [42, 43]);
+  assert.equal(first.processes.find(item => item.pid === 44).canTerminate, false);
+  f.state.rows = f.state.rows.filter(item => item.pid !== 42);
+  const second = await f.manager.metrics();
+  assert.equal(second.processes.find(item => item.pid === 43).id, group.id);
+  assert.deepEqual(f.state.signals, []);
+});
+
+test('CPU ao vivo usa delta cumulativo por processo e suporta vários núcleos', async t => {
+  const f = await fixture(t);
+  f.state.rows.push(processRow(43, { ppid: 42, cpuTime: '00:20.00', executable: '/Applications/Example.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper' }));
+  const first = await f.manager.list();
+  assert.equal(first.processes.find(item => item.pid === 42).cpu, 34.6);
+  f.state.now += 1000;
+  f.state.rows.find(item => item.pid === 42).cpuTime = '00:10.40';
+  f.state.rows.find(item => item.pid === 43).cpuTime = '00:21.20';
+  f.state.rows.find(item => item.pid === 43).rss = 4096;
+  const second = await f.manager.metrics();
+  const group = second.processes.find(item => item.pid === 42);
+  assert.ok(Math.abs(group.cpu - 160) < 0.001);
+  assert.equal(group.memoryBytes, 6 * 1024 ** 2);
+  f.state.now += 1000;
+  const third = await f.manager.metrics();
+  assert.equal(third.processes.find(item => item.pid === 42).cpu, 0);
+});
+
+test('PID reaproveitado reinicia a amostra de CPU sem herdar o contador anterior', async t => {
+  const f = await fixture(t);
+  await f.manager.list();
+  f.state.now += 1000;
+  Object.assign(f.state.rows.find(item => item.pid === 42), { started: 'Sat Nov  7 20:28:24 2026', cpuTime: '00:30.00', cpu: 4.2 });
+  const result = await f.manager.metrics();
+  assert.equal(result.processes.find(item => item.pid === 42).cpu, 4.2);
+});
+
+test('falha de processos preserva gauges e confirmações com erro explícito da lista', async t => {
+  const f = await fixture(t);
+  await f.manager.list();
+  const request = await f.processConsent(true);
+  f.state.psError = true;
+  const result = await f.manager.metrics();
+  assert.equal(result.ok, true);
+  assert.equal(result.systemMetrics.cpuPercent, 25);
+  assert.equal(result.memoryPressure.level, 'normal');
+  assert.equal(Object.hasOwn(result, 'processes'), false);
+  assert.match(result.processError, /última leitura/);
+  f.state.psError = false;
+  assert.equal((await f.manager.terminate(request, { dryRun: true })).simulated, true);
+});
+
+test('encerrar app revisa todos os membros e só sinaliza os PIDs explicitamente confirmados', async t => {
+  const f = await fixture(t);
+  f.state.rows.push(processRow(43, { ppid: 42, executable: '/Applications/Example.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper' }));
+  await f.manager.list();
+  const prepared = await f.manager.prepareProcess(42, { dryRun: false });
+  assert.equal(prepared.processCount, 2);
+  assert.deepEqual(prepared.pids, [42, 43]);
+  f.state.rows.push(processRow(44, { ppid: 42, executable: '/Applications/Example.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper' }));
+  await f.manager.metrics(); // A nova leitura não troca os membros vinculados ao token.
+  const result = await f.manager.terminate({ pid: 42, token: prepared.token, force: false, expectedDryRun: false }, { dryRun: false });
+  assert.equal(result.ok, true);
+  assert.deepEqual(f.state.signals, [{ pid: 42, signal: 'SIGTERM' }, { pid: 43, signal: 'SIGTERM' }]);
+  assert.equal((await f.manager.prepareProcess(42, { force: true, dryRun: false })).ok, false);
+});
+
+test('nenhum membro recebe sinal se um auxiliar mudou de dono ou identidade antes de confirmar', async t => {
+  for (const change of [{ uid: UID + 1 }, { started: 'Sat Nov  7 20:28:24 2026' }]) {
+    const f = await fixture(t);
+    f.state.rows.push(processRow(43, { ppid: 42, executable: '/Applications/Example.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper' }));
+    await f.manager.list();
+    const request = await f.processConsent();
+    Object.assign(f.state.rows.find(item => item.pid === 43), change);
+    assert.equal((await f.manager.terminate(request, { dryRun: false })).ok, false);
+    assert.deepEqual(f.state.signals, []);
+  }
+});
+
+test('forçar app exige SIGTERM anterior de cada membro e uma nova revisão', async t => {
+  const f = await fixture(t);
+  f.state.rows.push(processRow(43, { ppid: 42, executable: '/Applications/Example.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper' }));
+  await f.manager.list();
+  await f.manager.terminate(await f.processConsent(), { dryRun: false });
+  const listed = await f.manager.metrics();
+  assert.equal(listed.processes.find(item => item.pid === 42).canForce, true);
+  const forced = await f.processConsent(false, true);
+  f.state.onSignal = pid => { f.state.rows = f.state.rows.filter(item => item.pid !== pid); };
+  assert.equal((await f.manager.terminate(forced, { dryRun: false })).exited, true);
+  assert.deepEqual(f.state.signals.slice(-2), [{ pid: 42, signal: 'SIGKILL' }, { pid: 43, signal: 'SIGKILL' }]);
+});
+
+test('forçar imediatamente após saída parcial revisa somente os membros restantes', async t => {
+  const f = await fixture(t);
+  f.state.rows.push(processRow(43, { ppid: 42, executable: '/Applications/Example.app/Contents/Frameworks/Helper.app/Contents/MacOS/Helper' }));
+  await f.manager.list();
+  f.state.onSignal = pid => { if (pid === 42) f.state.rows = f.state.rows.filter(item => item.pid !== pid); };
+  const terminated = await f.manager.terminate(await f.processConsent(), { dryRun: false });
+  assert.equal(terminated.canForce, true);
+  const forced = await f.manager.prepareProcess(42, { force: true, dryRun: false });
+  assert.equal(forced.ok, true);
+  assert.deepEqual(forced.pids, [43]);
+  f.state.onSignal = pid => { f.state.rows = f.state.rows.filter(item => item.pid !== pid); };
+  assert.equal((await f.manager.terminate({ pid: 42, token: forced.token, force: true, expectedDryRun: false }, { dryRun: false })).exited, true);
+  assert.deepEqual(f.state.signals.at(-1), { pid: 43, signal: 'SIGKILL' });
+});
+
+const cpu = (user, idle, sys = 0) => ({ times: { user, idle, sys, nice: 0, irq: 0 } });
+
+test('CPU do sistema usa deltas de todos os núcleos e divide pela capacidade total', async t => {
+  let read = 0;
+  const snapshots = [[cpu(100, 100), cpu(200, 200)], [cpu(200, 100), cpu(200, 500)]];
+  const f = await fixture(t, { getCpus: () => snapshots[read++] });
+  // 100 ms ocupados em 400 ms de capacidade: 25%, sem somar porcentagens de processos.
+  const result = await f.manager.list();
+  assert.equal(result.systemMetrics.cpuPercent, 25);
+  assert.equal(read, 2);
+  assert.equal(result.systemMetrics.memoryUsedBytes, 12 * 1024 ** 3);
+});
+
+test('CPU ociosa e CPU saturada são leituras válidas de 0% e 100%', async t => {
+  for (const [after, percent] of [[cpu(0, 100), 0], [cpu(100, 0), 100]]) {
+    let read = 0;
+    const f = await fixture(t, { getCpus: () => [read++ ? after : cpu(0, 0)] });
+    assert.equal((await f.manager.list()).systemMetrics.cpuPercent, percent);
+  }
+});
+
+test('amostra de CPU inválida fica indisponível sem ocultar a RAM nem impedir a lista', async t => {
+  const cases = [
+    [[], []],
+    [[cpu(10, 10)], [cpu(20, 20), cpu(20, 20)]],
+    [[cpu(10, 10)], [cpu(5, 30)]],
+    [[cpu(10, 10)], [cpu(10, 10)]],
+    [[cpu(10, 10)], [cpu(NaN, 20)]],
+    [[cpu(10, 10)], [cpu(Infinity, 20)]],
+  ];
+  for (const snapshots of cases) {
+    let read = 0;
+    const f = await fixture(t, { getCpus: () => snapshots[read++] });
+    const result = await f.manager.list();
+    assert.equal(result.ok, true);
+    assert.equal(result.systemMetrics.cpuPercent, null);
+    assert.equal(result.systemMetrics.memoryUsedBytes, 12 * 1024 ** 3);
+  }
+  const f = await fixture(t, { waitForCpuSample: async () => { throw Error('sample unavailable'); } });
+  const result = await f.manager.list();
+  assert.equal(result.systemMetrics.cpuPercent, null);
+  assert.equal(result.memoryPressure.level, 'normal');
+});
+
+test('RAM inválida fica indisponível independentemente da CPU e da pressão de memória', async t => {
+  for (const memory of [{ total: 0, free: 0 }, { total: 16, free: 17 }, { total: 16, free: -1 }, { total: NaN, free: 0 }, { total: 16, free: null }]) {
+    const f = await fixture(t, { getMemoryInfo: () => memory });
+    const result = await f.manager.list();
+    assert.deepEqual(result.systemMetrics, { cpuPercent: 25, memoryUsedBytes: null, memoryTotalBytes: null });
+    assert.equal(result.memoryPressure.level, 'normal');
+  }
+  const f = await fixture(t, { getMemoryInfo: () => { throw Error('memory unavailable'); } });
+  assert.deepEqual((await f.manager.list()).systemMetrics, { cpuPercent: 25, memoryUsedBytes: null, memoryTotalBytes: null });
 });
 
 test('processos auxiliares usam ícone do aplicativo pai sem enviar caminhos ao renderer', async t => {

@@ -35,7 +35,12 @@ function parseRelease(release, current) {
   const asset = (Array.isArray(release.assets) ? release.assets : []).find((a) =>
     a.state === 'uploaded' && a.size > 0 && /^CalangoClean(?:-\d+\.\d+\.\d+-universal)?\.dmg$/.test(a.name) &&
     downloadUrl(a.browser_download_url));
-  return asset ? { version: release.tag_name.replace(/^v/, ''), url: downloadUrl(asset.browser_download_url) } : null;
+  if (!asset) return null;
+  // O GitHub publica o SHA-256 do asset em `digest` ("sha256:<64 hex>"). Sem ele não há como conferir o arquivo.
+  const m = typeof asset.digest === 'string' ? asset.digest.match(/^sha256:([0-9a-f]{64})$/i) : null;
+  if (!m) return null;
+  return { version: release.tag_name.replace(/^v/, ''), url: downloadUrl(asset.browser_download_url),
+    sha256: m[1].toLowerCase(), size: asset.size, name: asset.name };
 }
 
 function fetchRelease() {

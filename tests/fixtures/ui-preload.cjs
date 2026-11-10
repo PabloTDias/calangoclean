@@ -27,8 +27,9 @@ const defaultAnalyses = Object.fromEntries(cats.map((cat,index)=>[cat.id,{id:cat
 defaultAnalyses.downloadsLarge.details=[{label:'gravacao.mov',bytes:1.1e9,path:'/fixture/Downloads/gravacao.mov'},{label:'arquivo.zip',bytes:.7e9,path:'/fixture/Downloads/arquivo.zip'}];
 defaultAnalyses.chromeIndexedDB.details=[{label:'app.exemplo.test',bytes:.42e9},{label:'docs.exemplo.test',bytes:.25e9},{label:'mensagens.exemplo.test',bytes:.16e9},{label:'notas.exemplo.test',bytes:.09e9},{label:'outros.exemplo.test',bytes:.04e9}];
 const performanceFixture={
+  systemMetrics:{cpuPercent:27.5,memoryUsedBytes:12e9,memoryTotalBytes:16e9},
   processes:[
-    {pid:4101,name:'Editor de exemplo',icon:fixtureIcon,cpu:18.4,memoryBytes:640e6,elapsedSeconds:3725,canTerminate:true,canForce:false,blockedReason:null},
+    {id:'group-editor',pid:4101,pids:[4101,4111,4112],processCount:3,isAppGroup:true,name:'Editor de exemplo',icon:fixtureIcon,cpu:18.4,memoryBytes:640e6,elapsedSeconds:3725,canTerminate:true,canForce:false,blockedReason:null},
     {pid:4102,name:'Render de exemplo',cpu:82.6,memoryBytes:240e6,elapsedSeconds:95,canTerminate:true,canForce:false,blockedReason:null},
     {pid:4103,name:'Finder',cpu:1.2,memoryBytes:128e6,elapsedSeconds:86400,canTerminate:false,canForce:false,blockedReason:'Processo protegido do sistema.'},
   ],
@@ -36,7 +37,7 @@ const performanceFixture={
   services:[
     {id:'service-example',label:'com.exemplo.sincronizador',pid:5101,canUnload:true,blockedReason:null},
     {id:'service-protected',label:'com.sejacalango.calangoclean.auto',pid:5102,canUnload:false,blockedReason:'O agendamento do CalangoClean é protegido.'},
-  ],sampledAt:'2026-11-07T15:30:00.000Z',
+  ],sampledAt:'2026-11-09T15:30:00.000Z',
 };
 const model={
   version:'0.4.3',
@@ -52,7 +53,7 @@ const model={
     {id:'app-running',name:'App em uso',path:'/Applications/App em uso.app',bytes:96e6,version:'1.0',canUninstall:false,running:true,reason:'Feche o aplicativo antes de desinstalar.'},
     {id:'app-protected',name:'Aplicativo protegido',path:'/Applications/Aplicativo protegido.app',bytes:null,version:'1.0',canUninstall:false,running:false,reason:'Aplicativo protegido do sistema.'},
   ], applicationsError:false,prepareUninstallError:false,prepareUninstallDelay:0,uninstallError:false,
-  performance:clone(performanceFixture),performanceError:false,performanceDelay:0,prepareProcessDelay:0,prepareProcessError:false,terminateProcessError:false,processExits:false,prepareServiceError:false,unloadServiceError:false,
+  performance:clone(performanceFixture),performanceError:false,performanceDelay:0,performanceMetrics:null,performanceMetricsError:false,performanceMetricsDelay:0,prepareProcessDelay:0,prepareProcessError:false,terminateProcessError:false,processExits:false,prepareServiceError:false,unloadServiceError:false,
   speed:{ok:true,downMbps:284.6,upMbps:92.4,latencyMs:12}, speedDelay:30, foldersDelay:30, folderResult:clone(folders),
   categoryError:false, scheduleError:false, updateError:false, downloadError:false, ejectError:false, cleanError:false, cleanPartial:false, photoOpenError:false,
 };
@@ -61,6 +62,7 @@ let uninstallSequence=0;
 const uninstallTokens=new Map();
 let performanceSequence=0;
 const performanceTokens=new Map();
+const performanceMetricStats={active:0,maxActive:0,started:[]};
 const mainApi={
   getPrivacyBrowsers:async()=>{record('getPrivacyBrowsers');await wait(model.privacyDelay);return model.privacyError?{ok:false,error:'Não foi possível listar os navegadores.'}:{ok:true,browsers:clone(model.privacyBrowsers)};},
   openPrivacyBrowser:async id=>{record('openPrivacyBrowser',id);return model.privacyOpenError?{ok:false,error:'Não foi possível abrir o navegador.'}:{ok:true,opened:true,deleted:false,message:'Navegador aberto. Escolha o período e confirme os dados a excluir no navegador.'};},
@@ -73,6 +75,9 @@ const mainApi={
   setTrashDays:async days=>{record('setTrashDays',days);model.analyses.trashOld.settings={...model.analyses.trashOld.settings,days};model.analyses.trashOld.bytes=({0:2.4e9,7:1.2e9,15:.76e9,30:.31e9})[days]??0;return{ok:true};},
   clean:async(ids,confirmation)=>{record('clean',ids,confirmation);if(model.cleanError)throw Error('Falha de limpeza simulada.');return {dryRun:model.dryRun,results:ids.map(id=>({id,freedBytes:model.cleanAllFailed?0:model.analyses[id].bytes,skipped:!!model.cleanAllFailed,status:model.cleanAllFailed?'failed':model.cleanPartial&&id==='trashOld'?'partial':'ok',reason:model.cleanAllFailed?'Não foi possível limpar os itens.':model.cleanPartial&&id==='trashOld'?'bloqueado.pdf: Sem permissão.':model.dryRun?'simulação':''}))};},
   getVolumes:async()=>clone(model.volumes),onVolumes:listen('volumes'),
+  lastVolumeFolders:async id=>{record('lastVolumeFolders',id);return{ok:true,result:null};},
+  analyzeVolumeFolders:async id=>{record('analyzeVolumeFolders',id);await wait(30);return{ok:true,result:{at:'2026-11-09T18:00:00Z',used:260e9,items:[{id:'documents',label:'Trabalho',bytes:160e9},{id:'movies',label:'Vídeos',bytes:80e9},{id:'undetailed',label:'Sistema e não detalhado',bytes:20e9}],note:'Espaço por pastas.',partial:false}};},
+  cancelVolumeFolders:async id=>{record('cancelVolumeFolders',id);return{ok:true};},
   ejectVolume:async id=>{record('ejectVolume',id);return model.ejectError?{ok:false,error:'Disco em uso pelo Finder.'}:{ok:true};},
   getNetwork:async()=>clone(model.network),runSpeedTest:async()=>{record('runSpeedTest');await wait(model.speedDelay);return clone(model.speed);},
   getBluetooth:async()=>clone(model.bluetooth),
@@ -86,13 +91,24 @@ const mainApi={
   uninstallApp:async consent=>{record('uninstallApp',consent);const prepared=uninstallTokens.get(consent.token);uninstallTokens.delete(consent.token);const item=model.applications.find(item=>item.id===consent.id);if(!prepared||prepared.id!==consent.id)return{ok:false,error:'Confirmação inválida. Revise o aplicativo novamente.'};if(consent.expectedDryRun!==model.dryRun||prepared.dryRun!==model.dryRun)return{ok:false,error:'O modo de limpeza mudou. Revise o aplicativo novamente.'};if(model.uninstallError||!item?.canUninstall)return{ok:false,error:item?.reason||'O aplicativo está em uso. Feche-o e tente novamente.'};if(!model.dryRun)model.applications=model.applications.filter(item=>item.id!==consent.id);return{ok:true,dryRun:model.dryRun,app:clone(item)};},
   revealApplication:async id=>{record('revealApplication',id);return{ok:true};},
   getPerformance:async()=>{record('getPerformance');performanceTokens.clear();await wait(model.performanceDelay);if(model.performanceError)throw Error('Não foi possível ler os processos.');return clone(model.performance);},
+  getPerformanceMetrics:async()=>{
+    record('getPerformanceMetrics');
+    const value=model.performanceMetrics||model.performance;
+    const result=clone({ok:true,processes:Object.hasOwn(value,'processes')?value.processes:model.performance.processes,processError:value.processError||null,systemMetrics:value.systemMetrics,memoryPressure:value.memoryPressure,pressureError:value.pressureError||null,sampledAt:value.sampledAt});
+    const error=model.performanceMetricsError,ms=model.performanceMetricsDelay;
+    performanceMetricStats.active++;
+    performanceMetricStats.maxActive=Math.max(performanceMetricStats.maxActive,performanceMetricStats.active);
+    performanceMetricStats.started.push(Date.now());
+    try{await wait(ms);if(error)throw Error('Não foi possível atualizar os marcadores.');return result;}
+    finally{performanceMetricStats.active--;}
+  },
   prepareProcess:async(pid,{force=false}={})=>{
     record('prepareProcess',pid,{force});await wait(model.prepareProcessDelay);
     const item=model.performance.processes.find(item=>item.pid===pid);
     if(model.prepareProcessError||!item?.canTerminate||force&&!item.canForce)return{ok:false,error:item?.blockedReason||'O processo mudou. Atualize a lista.'};
     const token=`fixture-process-${++performanceSequence}`;
     performanceTokens.set(token,{kind:'process',pid,force,dryRun:model.dryRun});
-    return{ok:true,token,pid,name:item.name,force,dryRun:model.dryRun};
+    return{ok:true,token,pid,pids:item.pids||[pid],processCount:item.processCount||1,isAppGroup:item.isAppGroup===true,name:item.name,force,dryRun:model.dryRun};
   },
   terminateProcess:async consent=>{
     record('terminateProcess',consent);const prepared=performanceTokens.get(consent.token);performanceTokens.delete(consent.token);
@@ -121,10 +137,10 @@ const mainApi={
     return{ok:true,simulated:model.dryRun};
   },
   getSchedule:async()=>clone(model.schedule),setSchedule:async patch=>{record('setSchedule',patch);if(model.scheduleError)throw Error('Falha de agendamento simulada.');model.schedule={...model.schedule,...patch};return clone(model.schedule);},
-  checkUpdates:async()=>{record('checkUpdates');if(model.updateError)throw Error('Sem conexão.');return clone(model.updates);},downloadUpdate:async()=>{record('downloadUpdate');return model.downloadError?{ok:false,error:'Não foi possível abrir o download.'}:{ok:true};},onUpdates:listen('updates'),
+  checkUpdates:async()=>{record('checkUpdates');if(model.updateError)throw Error('Sem conexão.');return clone(model.updates);},installUpdate:async()=>{record('installUpdate');emit('updateProgress',{phase:'download',percent:42});await wait(10);return model.downloadError?{ok:false,error:'A verificação de segurança (SHA-256) falhou. Nada foi instalado.'}:{ok:true};},onUpdateProgress:listen('updateProgress'),onUpdates:listen('updates'),
   setAppearance:async appearance=>{record('setAppearance',appearance);if(model.appearanceError)return{ok:false,appearance:model.appearance,colorScheme:model.colorScheme,error:'Falha ao salvar aparência.'};model.appearance=appearance;model.colorScheme=appearance==='noturno'?'dark':'light';const out={ok:true,appearance,colorScheme:model.colorScheme};emit('appearance',out);return out;},onAppearance:listen('appearance'),
   openPhotos:async()=>{record('openPhotos');if(model.photoOpenError)throw Error('Janela indisponível no teste.');return {ok:true};},onPhotosChanged:listen('photosChanged'),
-  openPrivacy:permission=>record('openPrivacy',permission),openAccount:async()=>{record('openAccount');return{ok:true};},openSite:()=>record('openSite'),quit:()=>record('quit'),hide:()=>record('hide'),onShown:listen('shown'),onEscape:listen('escape'),
+  openPrivacy:permission=>record('openPrivacy',permission),openAccount:async()=>{record('openAccount');return{ok:true};},openSite:()=>record('openSite'),quit:()=>record('quit'),hide:()=>record('hide'),onShown:listen('shown'),onHidden:listen('hidden'),onEscape:listen('escape'),
 };
 const photoRoots={photos:[{id:'pictures',label:'Imagens',path:'/fixture/Pictures'},{id:'downloads',label:'Downloads',path:'/fixture/Downloads'}],files:[{id:'downloads',label:'Downloads',path:'/fixture/Downloads'},{id:'documents',label:'Documentos',path:'/fixture/Documents'}]};
 const makeFile=(id,name,bytes,root='Pictures',kind)=>({id,name,bytes,path:`/fixture/${root}/${name}`,modifiedAt:'2026-11-01T12:00:00.000Z',kind,extension:name.split('.').pop()});
@@ -150,6 +166,7 @@ contextBridge.exposeInMainWorld('limpa',mainApi);
 contextBridge.exposeInMainWorld('photos',photoApi);
 contextBridge.exposeInMainWorld('__uiTest',{
   calls:()=>clone(calls),clear:()=>{calls.length=0;},get:()=>clone(model),photos:()=>clone(photoModel),
+  performanceMetricsStats:()=>clone(performanceMetricStats),
   patch:value=>Object.assign(model,clone(value)),patchPhotos:value=>Object.assign(photoModel,clone(value)),
   analysis:(id,value)=>{model.analyses[id]={...model.analyses[id],...clone(value)};},emit,
 });

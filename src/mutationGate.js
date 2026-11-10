@@ -3,6 +3,7 @@ function create() {
   let busy = false;
   let revision = 0;
   return {
+    isBusy: () => busy,
     revision: () => revision,
     changed: () => ++revision,
     async run(fn, { expectedRevision } = {}) {

@@ -81,6 +81,7 @@ async function list({ dir = VOLUMES_DIR } = {}) {
     seen.add(info.DeviceIdentifier);
     out.push({
       id: info.DeviceIdentifier,
+      uuid: info.VolumeUUID || null,
       path: mountPath,
       name: info.VolumeName || e.name,
       format: formatName(info),

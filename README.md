@@ -31,21 +31,49 @@ em `docs/privacidade-0.4.3.md`.
 
 ## Desempenho
 
-A aba **Desempenho** mostra os processos com maior uso de CPU ou memória, o tempo
-aberto e a pressão de memória do macOS. Os dados são consultados ao entrar na aba
-ou clicar em **Atualizar**; não há monitoramento em segundo plano. A ordenação e a
-busca usam a última leitura.
-Em **Ordenar por**, escolha **Nome** (A–Z), **CPU** ou **Memória** (maiores primeiro).
-A lista de aplicativos para desinstalação também permanece em ordem alfabética.
+A aba **Desempenho** agrupa cada aplicativo com seus processos auxiliares em uma
+linha e soma o uso de CPU e memória. A lista, os marcadores e os gráficos são
+atualizados automaticamente a cada **500 ms**; a pressão de memória é consultada
+a cada **5 segundos** para reduzir o custo da coleta. Isso ocorre enquanto a aba
+estiver aberta e o painel visível. A atualização pausa em outras abas, com o painel
+oculto e durante confirmações ou operações. Consultas demoradas não se acumulam.
+
+Os serviços são consultados ao entrar na aba. O botão Atualizar foi removido desta
+aba; falhas da leitura inicial são tentadas novamente automaticamente. A busca
+aceita o nome do app e o PID de qualquer processo do grupo. Os gráficos mostram
+o histórico do último minuto de CPU e RAM em uso, sem inventar leituras anteriores.
+
+Os marcadores de CPU e memória usam arcos segmentados e ponteiros. A CPU total
+considera todos os núcleos em uma amostra de 200 ms, na escala de 0 a 100%. A memória
+mostra a RAM ocupada, incluindo caches que o macOS pode liberar; a pressão de memória
+continua sendo a indicação de necessidade de RAM. Leituras indisponíveis aparecem
+como **—**, sem ponteiro. Veja as prévias e a validação em
+[`docs/marcadores-desempenho-0.4.4.md`](docs/marcadores-desempenho-0.4.4.md).
+
+Clique nos cabeçalhos **App / processo**, **CPU** ou **Memória** para ordenar; um
+segundo clique inverte a direção. A ordenação acompanha as novas leituras. A barra
+na coluna Memória mostra a parcela da RAM total usada pelo app, junto dos bytes e
+da porcentagem. A lista de apps para desinstalação permanece em ordem alfabética.
 
 A lista usa colunas alinhadas de CPU e memória e os ícones dos aplicativos,
 como referência do Monitor de Atividade. Processos auxiliares usam o ícone do app
 pai; quando o ícone não está disponível, aparece um símbolo genérico. Os ícones
 também aparecem na lista do desinstalador, sem alterar as regras de remoção.
 
-**Encerrar…** pede confirmação e envia uma solicitação de encerramento normal
-(SIGTERM). Se o mesmo processo continuar aberto, **Forçar encerramento…** permite
+O botão **×** pede confirmação com a quantidade de processos do aplicativo e envia
+uma solicitação de encerramento normal (SIGTERM) aos membros revisados. Se algum
+processo continuar aberto, **Forçar encerramento…** permite
 uma segunda confirmação antes de SIGKILL, com aviso sobre trabalho não salvo.
+
+Em **Dispositivos**, o SSD principal, os discos externos, a rede e o Bluetooth
+começam recolhidos. Clique no cabeçalho para expandir. Discos externos mostram uma
+rosca por pastas, com análise somente por clique, cancelamento e indicação de
+resultados parciais. Reabrir um disco reaproveita o resultado até clicar em
+**Analisar de novo**. A análise nunca altera arquivos nem segue atalhos ou outras
+montagens.
+
+**Exibição** e **Atualizações** ficam em **Ajustes e atualizações**. O rodapé mantém
+a marca e a versão; o botão power para sair fica no cabeçalho.
 Processos do sistema, de outros usuários e do próprio CalangoClean são protegidos.
 O aplicativo verifica novamente o dono, o executável e a hora de início antes de agir.
 
@@ -242,7 +270,15 @@ A partir da versão 0.3.3, a primeira abertura ativa a limpeza real também nas 
 ## Ícones
 
 Ícones do [Phosphor Icons](https://phosphoricons.com) (MIT), embutidos em `ui/icons.js`; a licença está em `ui/icons-LICENSE.txt`.
-O ícone do app (`build/icon.png`) e o da barra de menu (`assets/`) são gerados por `node scripts/make-icons.js`.
+Use `npm run icons` para gerar os ícones a partir das imagens em `assets/`:
+
+- `Icone CalangoClean.png`: ícone do aplicativo em `build/icon.png`,
+  `build/icon.icns` e `ui/app-icon.png`.
+- `FiveIcon Calango.png`: favicon e marca das janelas em `ui/favicon.png`, além
+  dos ícones monocromáticos da barra de menu em `assets/iconTemplate*.png`.
+
+O gerador preserva os arquivos originais e prepara os tamanhos Retina e o formato
+do macOS. O símbolo da Seja Calango no rodapé continua em `ui/calangoclean-silhueta.png`.
 
 ## Avisos de atualização (a partir da 0.3.2)
 
@@ -252,11 +288,15 @@ no painel e uma notificação do macOS (uma por versão em cada sessão, se perm
 O botão **Verificar atualizações** permite consultar manualmente. Sem internet, o app
 continua funcionando; consultas automáticas não exibem mensagens de erro.
 
-**Baixar atualização** abre o DMG no navegador padrão. A instalação é manual:
+A partir da versão 0.4.4, **Atualizar** baixa o DMG, confere seu SHA-256 publicado
+no GitHub, valida o aplicativo e reinicia para concluir a instalação. A atualização
+só começa por clique; em caso de falha, a versão anterior é preservada e o painel
+informa o erro. As preferências e o histórico são mantidos.
+
+Nas versões anteriores, **Baixar atualização** abre o DMG no navegador padrão:
 feche o CalangoClean, abra o DMG e escolha **Substituir** ao arrastar o app para Applications.
-Mantenha o nome `CalangoClean.app`; não crie cópias com o número da versão. A configuração
-existente é preservada. A versão 0.3.1 não possui essa consulta e precisa receber
-a primeira atualização manualmente.
+Mantenha o nome `CalangoClean.app`; não crie cópias com o número da versão.
+A versão 0.3.1 não possui essa consulta e precisa receber a primeira atualização manualmente.
 
 Para nossas instalações locais, depois de gerar e abrir o DMG, usar o instalador
 reutilizável, com o app fechado (substitua `<versão>` pelo número do DMG):

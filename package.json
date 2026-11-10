@@ -1,6 +1,6 @@
 {
   "name": "calangoclean",
-  "version": "0.4.3",
+  "version": "0.4.5",
   "description": "Analisa e limpa o Mac direto da barra de menu",
   "main": "src/main.js",
   "private": true,
@@ -8,6 +8,7 @@
     "start": "env -u ELECTRON_RUN_AS_NODE electron .",
     "dist": "node scripts/dist.js",
     "install:local": "node scripts/install-local.js",
+    "icons": "env -u ELECTRON_RUN_AS_NODE electron scripts/make-icons.js",
     "preview:photos": "env -u ELECTRON_RUN_AS_NODE electron scripts/preview-photos.js",
     "test": "node --test tests/*.test.js",
     "test:ui": "env -u ELECTRON_RUN_AS_NODE electron scripts/check-ui.cjs"
@@ -35,6 +36,7 @@
       "assets/completion.wav",
       "package.json"
     ],
+    "afterSign": "scripts/afterSign.js",
     "asarUnpack": ["assets/completion.wav"],
     "mac": {
       "category": "public.app-category.utilities",

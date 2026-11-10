@@ -101,7 +101,7 @@ async function mainFixture() {
   const page = pathToFileURL(path.join(dirname, '..', 'ui', 'index.html')).href;
   const handlers = new Map();
   const nativeTheme = new Theme();
-  const app = Object.assign(new EventEmitter(), { isPackaged: true, isReady: () => true, getVersion: () => '0.4.0' });
+  const app = Object.assign(new EventEmitter(), { isPackaged: true, isReady: () => true, getVersion: () => '0.4.0', getPath: () => '/Applications/CalangoClean.app/Contents/MacOS/CalangoClean' });
   const frame = { url: page };
   const sent = [];
   const opened = [];
@@ -122,7 +122,8 @@ async function mainFixture() {
     update: async (fn) => { const cfg = { appearance: 'normal' }; fn(cfg); return cfg; },
     enableProduction: async () => {}, cleanLegacy: async () => {}, load: async () => ({ schedule: {},dryRun:true }), appendHistory:async entry=>{history.push(entry);},
   };
-  let photoOptions;
+  let photoOptions, installerOptions;
+  const installCalls = [];
   const imports = {
     electron: { app, nativeTheme, BrowserWindow: { getAllWindows: () => [window] },
       ipcMain: { handle: (name, fn) => handlers.set(name, fn), on() {} }, screen,
@@ -136,6 +137,7 @@ async function mainFixture() {
     './applications':{create:()=>({list:async()=>{applicationCalls.push('list');return{ok:true,items:[]};},prepare:async id=>{applicationCalls.push(['prepare',id]);return{ok:true,id,token:'fixture-token'};},uninstall:async(request,cfg)=>{applicationCalls.push(['uninstall',request,cfg]);return{ok:true,dryRun:true,movedToTrash:false,name:'Fixture'};},pathFor:async()=>null})},
     './performance':{create:()=>({
       list:async()=>{performanceCalls.push(['list']);return{processes:[],services:[]};},
+      metrics:async()=>{performanceCalls.push(['metrics']);return{ok:true,systemMetrics:{cpuPercent:25,memoryUsedBytes:12,memoryTotalBytes:16}};},
       prepareProcess:async(pid,options)=>{performanceCalls.push(['prepareProcess',pid,options]);return{ok:true,pid,token:'process-token',...options};},
       prepareService:async(id,options)=>{performanceCalls.push(['prepareService',id,options]);return{ok:true,id,token:'service-token',...options};},
       terminate:async(request,options)=>{performanceCalls.push(['terminate',request,options]);return{ok:true,simulated:options.dryRun};},
@@ -145,8 +147,10 @@ async function mainFixture() {
     './categories': { describeAll: () => [] }, './browsers': {},
     './cleaner': { create: () => ({}) }, './scheduler': { sync: async () => {} },
     './volumes': { watch: () => () => {} }, './network': {}, './bluetooth': {}, './folders': {},
+    './volumeFolders': { create: () => ({ last: async id => ({ ok: true, result: null }), analyze: async id => ({ ok: true, result: { items: [] } }), cancel() {} }) },
     './migrate': { run: async () => {} },
-    './updates': { create: () => ({ check: async () => ({}), getState: () => ({}) }), INTERVAL: 1000 },
+    './updates': { create: () => ({ check: async () => ({}), getState: () => ({ available: { version: '9.9.9' } }) }), INTERVAL: 1000 },
+    './updateInstaller': { create: options => { installerOptions = options; return { install: async (available) => { installCalls.push(available); return { ok: true }; }, takeResult: async () => null, cancel() {} }; } },
     './photoWindow': { create: (options) => { photoOptions = options; return {}; } },
     './mutationGate': { create: () => ({ run: (fn) => fn(), revision: () => 0 }) },
   };
@@ -155,7 +159,7 @@ async function mainFixture() {
     require: (id) => Object.hasOwn(imports, id) ? imports[id] : require(id),
   });
   await mb.listeners('ready')[0]();
-  return { handlers, nativeTheme, mb, window, frame, sent, opened, screen, size, photoOptions,applicationCalls,performanceCalls,config,history,soundCalls,privacyCalls };
+  return { installCalls, installerOptions: () => installerOptions, handlers, nativeTheme, mb, window, frame, sent, opened, screen, size, photoOptions,applicationCalls,performanceCalls,config,history,soundCalls,privacyCalls };
 }
 
 test('IPC de aparência aceita só o painel principal e propaga tema a duplicados', async () => {
@@ -242,13 +246,33 @@ test('som só aceita o painel e compartilha a preferência com duplicados',async
 test('Desempenho coleta somente por pedido do painel e recusa outro frame',async()=>{
   const f=await mainFixture();const event={sender:f.window.webContents,senderFrame:f.frame};
   assert.equal(f.performanceCalls.length,0,'abrir o app não deve coletar processos');
-  for(const channel of ['performance:list','performance:prepare-process','performance:prepare-service','performance:terminate','performance:unload-service']){
+  for(const channel of ['performance:list','performance:metrics','performance:prepare-process','performance:prepare-service','performance:terminate','performance:unload-service']){
     await assert.rejects(f.handlers.get(channel)({sender:{},senderFrame:f.frame},123),/pelo painel/);
     await assert.rejects(f.handlers.get(channel)({sender:f.window.webContents,senderFrame:{url:f.frame.url}},123),/pelo painel/);
   }
   assert.equal(f.performanceCalls.length,0);
   await f.handlers.get('performance:list')(event);
   assert.deepEqual(f.performanceCalls,[['list']]);
+});
+
+test('métricas de Desempenho usam o endpoint dedicado somente para o painel visível', async () => {
+  const f = await mainFixture();
+  const event = { sender: f.window.webContents, senderFrame: f.frame };
+  assert.equal((await f.handlers.get('performance:metrics')(event)).systemMetrics.cpuPercent, 25);
+  assert.deepEqual(f.performanceCalls, [['metrics']]);
+  f.window.isVisible = () => false;
+  assert.equal((await f.handlers.get('performance:metrics')(event)).code, 'HIDDEN');
+  assert.deepEqual(f.performanceCalls, [['metrics']]);
+});
+
+test('análise dos discos externos aceita somente o painel principal e mantém IPC próprio', async () => {
+  const f = await mainFixture();
+  const event = { sender: f.window.webContents, senderFrame: f.frame };
+  for (const channel of ['volumes:folders-last', 'volumes:folders-analyze', 'volumes:folders-cancel']) {
+    assert.throws(() => f.handlers.get(channel)({ sender: {}, senderFrame: f.frame }, 'disk9s1'), /pelo painel/);
+    assert.throws(() => f.handlers.get(channel)({ sender: f.window.webContents, senderFrame: { url: f.frame.url } }, 'disk9s1'), /pelo painel/);
+    assert.equal((await f.handlers.get(channel)(event, 'disk9s1')).ok, true);
+  }
 });
 
 test('Desempenho lê dryRun no main, registra ações e não aceita modo fornecido pelo painel',async()=>{
@@ -276,4 +300,16 @@ test('config ilegível ou falha ao registrar intenção bloqueia ações de Dese
   f.config.appendHistory=async()=>{throw Error('histórico indisponível');};
   await assert.rejects(f.handlers.get('performance:unload-service')(event,{}),/histórico indisponível/);
   assert.equal(f.performanceCalls.length,0);
+});
+
+test('atualização dentro do app só parte do painel principal e não recebe URL, hash ou caminho', async () => {
+  const ctx = await mainFixture();
+  const install = ctx.handlers.get('updates:install');
+  assert.equal(ctx.handlers.has('updates:download'), false);
+  const foreign = await install({ sender: {}, senderFrame: {} }, { url: 'https://evil.example/a.dmg' });
+  assert.equal(foreign.ok, false);
+  assert.equal(ctx.installCalls.length, 0);
+  const own = await install({ sender: ctx.window.webContents, senderFrame: ctx.window.webContents.mainFrame }, { url: 'https://evil.example/a.dmg' });
+  assert.equal(own.ok, true);
+  assert.deepEqual(ctx.installCalls, [{ version: '9.9.9' }], 'usa só a atualização validada da última consulta');
 });

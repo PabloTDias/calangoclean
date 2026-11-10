@@ -1,9 +1,12 @@
 // Gera os ícones do calangoclean a partir das imagens-base em assets/ (rodar com o Electron, que decodifica PNG):
 //   env -u ELECTRON_RUN_AS_NODE node_modules/electron/dist/Electron.app/Contents/MacOS/Electron scripts/make-icons.js
-//  - build/icon.png (1024x1024) e build/icon.icns: calangoclean-icon-base.png recortado pelo próprio quadrado
-//    arredondado (fora dele fica transparente), 824x824 centralizado no canvas, cantos no formato dos ícones do macOS;
-//  - assets/iconTemplate.png (18) e iconTemplate@2x.png (36): silhueta preta (template image da barra de menu);
-//  - ui/calangoclean-silhueta.png (64): máscara usada no rodapé (a cor vem do CSS).
+//  - build/icon.png (1024x1024), build/icon.icns e ui/app-icon.png (256x256):
+//    composição completa de assets/Icone CalangoClean.png, em um quadrado arredondado
+//    de 824x824 centralizado no canvas transparente padrão do macOS;
+//  - ui/favicon.png (128x128): assets/FiveIcon Calango.png, com cores e transparência;
+//  - assets/iconTemplate.png (18) e iconTemplate@2x.png (36): o calango varrendo
+//    (assets/calangoclean-silhueta.png) em silhueta preta, para o macOS pintar a barra de menu conforme o tema.
+// A máscara corporativa ui/calangoclean-silhueta.png, usada no rodapé, é independente.
 const fs = require('node:fs');
 const path = require('node:path');
 const zlib = require('node:zlib');
@@ -49,40 +52,22 @@ function encodePng(w, h, rgba) {
 // ---------- utilitários de imagem ----------
 function load(file) {
   const img = nativeImage.createFromPath(file);
+  if (img.isEmpty()) throw new Error(`Não foi possível ler a imagem: ${file}`);
   const { width, height } = img.getSize();
   return { img, width, height, bgra: img.toBitmap() };
 }
 function fromBgra(width, height, bgra) {
   return nativeImage.createFromBitmap(bgra, { width, height });
 }
-function bgraToRgba(bgra) {
-  const out = Buffer.alloc(bgra.length);
-  for (let i = 0; i < bgra.length; i += 4) {
-    out[i] = bgra[i + 2]; out[i + 1] = bgra[i + 1]; out[i + 2] = bgra[i]; out[i + 3] = bgra[i + 3];
-  }
-  return out;
-}
 const resize = (img, w, h) => img.resize({ width: w, height: h, quality: 'best' });
 
 // ---------- ícone do app ----------
 function makeAppIcon() {
-  const src = load(path.join(ROOT, 'assets', 'calangoclean-icon-base.png'));
-  // Caixa do quadrado arredondado: tudo que não é o preto dos cantos (base nova, de 06/11/2026).
-  let x0 = src.width, y0 = src.height, x1 = 0, y1 = 0;
-  for (let y = 4; y < src.height - 4; y++) { // ignora a moldura de 1 px da imagem
-    for (let x = 4; x < src.width - 4; x++) {
-      const o = (y * src.width + x) * 4;
-      if (Math.max(src.bgra[o], src.bgra[o + 1], src.bgra[o + 2]) > 28) {
-        if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y;
-      }
-    }
-  }
-  const bw = x1 - x0 + 1, bh = y1 - y0 + 1;
-  console.log(`quadrado detectado: x ${x0}..${x1}, y ${y0}..${y1} (${bw}x${bh})`);
+  const src = load(path.join(ROOT, 'assets', 'Icone CalangoClean.png'));
+  if (src.width !== src.height) throw new Error('O ícone do aplicativo precisa ser quadrado para preservar a composição.');
   const SIDE = 824, SIZE = 1024, OFF = (SIZE - SIDE) / 2;
-  const L = Math.min(Math.max(bw, bh), src.width, src.height); // recorte quadrado, centrado no quadrado detectado
-  const cx0 = Math.min(Math.max(Math.round((x0 + x1 + 1 - L) / 2), 0), src.width - L), cy0 = Math.min(Math.max(Math.round((y0 + y1 + 1 - L) / 2), 0), src.height - L);
-  const side = resize(src.img.crop({ x: cx0, y: cy0, width: L, height: L }), SIDE, SIDE);
+  // Preserva a imagem fornecida inteira, incluindo sua margem branca.
+  const side = resize(src.img, SIDE, SIDE);
   const px = side.toBitmap();
 
   // Máscara de ícone do macOS: retângulo arredondado (raio ≈ 22,4% do lado), com 4x4 de supersampling nas bordas.
@@ -105,9 +90,12 @@ function makeAppIcon() {
   for (let y = 0; y < SIDE; y++) {
     for (let x = 0; x < SIDE; x++) {
       const i = (y * SIDE + x) * 4;
-      let b = px[i], g = px[i + 1], r = px[i + 2];
-      let a = 1; // fundo preto fora do quadrado: a máscara de cantos abaixo faz o recorte
-      a *= coverage(x, y);
+      const sourceAlpha = px[i + 3] / 255;
+      // toBitmap usa BGRA pré-multiplicado; encodePng recebe RGBA normal.
+      const r = sourceAlpha ? Math.min(255, Math.round(px[i + 2] / sourceAlpha)) : 0;
+      const g = sourceAlpha ? Math.min(255, Math.round(px[i + 1] / sourceAlpha)) : 0;
+      const b = sourceAlpha ? Math.min(255, Math.round(px[i] / sourceAlpha)) : 0;
+      const a = sourceAlpha * coverage(x, y);
       const o = ((y + OFF) * SIZE + (x + OFF)) * 4;
       out[o] = r; out[o + 1] = g; out[o + 2] = b; out[o + 3] = Math.round(a * 255);
     }
@@ -115,6 +103,7 @@ function makeAppIcon() {
   fs.mkdirSync(path.join(ROOT, 'build'), { recursive: true });
   const png1024 = path.join(ROOT, 'build', 'icon.png');
   fs.writeFileSync(png1024, encodePng(SIZE, SIZE, out));
+  fs.writeFileSync(path.join(ROOT, 'ui', 'app-icon.png'), resize(load(png1024).img, 256, 256).toPNG());
 
   // .icns: iconset -> iconutil
   const set = path.join(ROOT, 'build', 'icon.iconset');
@@ -127,11 +116,15 @@ function makeAppIcon() {
   }
   execFileSync('iconutil', ['-c', 'icns', set, '-o', path.join(ROOT, 'build', 'icon.icns')]);
   fs.rmSync(set, { recursive: true, force: true });
-  console.log('build/icon.png e build/icon.icns gerados');
+  console.log('build/icon.png, build/icon.icns e ui/app-icon.png gerados de Icone CalangoClean.png');
 }
 
-// ---------- silhueta: barra de menu e rodapé ----------
+// ---------- favicon e silhueta da barra de menu ----------
 function makeSilhouette() {
+  const fav = load(path.join(ROOT, 'assets', 'FiveIcon Calango.png'));
+  if (fav.width !== fav.height) throw new Error('O favicon precisa ser quadrado para preservar a composição.');
+  fs.writeFileSync(path.join(ROOT, 'ui', 'favicon.png'), resize(fav.img, 128, 128).toPNG());
+  // Barra de menu: calango varrendo (silhueta preta com fundo transparente).
   const src = load(path.join(ROOT, 'assets', 'calangoclean-silhueta.png'));
   let x0 = src.width, y0 = src.height, x1 = 0, y1 = 0;
   for (let y = 0; y < src.height; y++) {
@@ -141,9 +134,10 @@ function makeSilhouette() {
       }
     }
   }
+  if (x0 > x1 || y0 > y1) throw new Error('O favicon está completamente transparente.');
   const bw = x1 - x0 + 1, bh = y1 - y0 + 1, side = Math.max(bw, bh);
   console.log(`silhueta: ${bw}x${bh}`);
-  // Quadrado transparente com a silhueta centralizada (BGRA; a silhueta é preta, então pré-multiplicado = normal).
+  // Quadrado transparente com a lagartixa centralizada; o template usa apenas o alfa.
   const sq = Buffer.alloc(side * side * 4);
   const ox = Math.floor((side - bw) / 2), oy = Math.floor((side - bh) / 2);
   for (let y = 0; y < bh; y++) {
@@ -165,13 +159,14 @@ function makeSilhouette() {
     for (let y = 0; y < inner; y++) small.copy(full, ((y + pad) * size + pad) * 4, y * inner * 4, (y + 1) * inner * 4);
     fs.writeFileSync(path.join(ROOT, 'assets', file), blackRgba(fromBgra(size, size, full), size));
   }
-  // Máscara do rodapé (64 px, sem folga; a cor vem do CSS).
-  fs.writeFileSync(path.join(ROOT, 'ui', 'calangoclean-silhueta.png'), blackRgba(resize(base, 64, 64), 64));
-  console.log('assets/iconTemplate*.png e ui/calangoclean-silhueta.png gerados');
+  console.log('ui/favicon.png e assets/iconTemplate*.png gerados (favicon: FiveIcon Calango.png; barra de menu: calangoclean-silhueta.png)');
 }
 
 app.whenReady().then(() => {
   makeAppIcon();
   makeSilhouette();
   app.quit();
+}).catch(error => {
+  console.error(error.message);
+  app.exit(1);
 });

@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 
-const FIELDS = 'pid=,ppid=,uid=,ruid=,svuid=,pcpu=,rss=,etime=,lstart=,comm=';
+const FIELDS = 'pid=,ppid=,uid=,ruid=,svuid=,pcpu=,rss=,etime=,lstart=,time=,comm=';
 const SYSTEM_NAMES = new Set(['launchd', 'WindowServer', 'kernel_task', 'Finder', 'Dock', 'loginwindow', 'SystemUIServer', 'runningboardd', 'securityd', 'cfprefsd', 'launchservicesd']);
 const SELF_LABEL = 'com.sejacalango.calangoclean';
 const within = (candidate, root) => candidate === root || candidate.startsWith(`${root}${path.sep}`);
@@ -18,6 +18,7 @@ const validLabel = label => typeof label === 'string' && /^[A-Za-z0-9][A-Za-z0-9
 const validPath = value => typeof value === 'string' && path.isAbsolute(value) && !/[\x00-\x1f\x7f]/.test(value) && path.resolve(value) === value;
 const statIdentity = stat => [stat.dev, stat.ino, stat.uid, stat.mode, stat.nlink, stat.size, stat.mtimeMs, stat.ctimeMs].join(':');
 const processIdentity = item => JSON.stringify([item.pid, item.ppid, item.uid, item.ruid, item.svuid, item.executable, item.started]);
+const appBundle = item => item.executable.match(/^(.*?\.app)(?:\/|$)/i)?.[1];
 
 function elapsed(value) {
   const match = value.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+)$/);
@@ -25,22 +26,30 @@ function elapsed(value) {
   return Number(match[1] || 0) * 86400 + Number(match[2] || 0) * 3600 + Number(match[3]) * 60 + Number(match[4]);
 }
 
+function cpuTime(value) {
+  const match = value.match(/^(?:(\d+)-)?(?:(\d+):)?(\d+):(\d+(?:\.\d+)?)$/);
+  if (!match || Number(match[4]) >= 60 || (match[2] && Number(match[3]) >= 60)) return null;
+  const seconds = Number(match[1] || 0) * 86400 + Number(match[2] || 0) * 3600 + Number(match[3]) * 60 + Number(match[4]);
+  return Number.isFinite(seconds) ? seconds : null;
+}
+
 function parseProcesses(text) {
   if (typeof text !== 'string') throw problem('PROCESS_UNAVAILABLE', 'Não foi possível ler os processos.');
   const result = [];
   const seen = new Set();
   for (const line of text.split('\n').filter(line => line.trim())) {
-    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+(?:\.\d+)?)\s+(\d+)\s+(\S+)\s+([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.+?)\s*$/);
+    const match = line.match(/^\s*(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+(?:\.\d+)?)\s+(\d+)\s+(\S+)\s+([A-Z][a-z]{2}\s+[A-Z][a-z]{2}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(\S+)\s+(.+?)\s*$/);
     if (!match) throw problem('PROCESS_UNAVAILABLE', 'A resposta do macOS sobre os processos não pôde ser validada.');
     const [pid, ppid, uid, ruid, svuid, cpu, rss] = match.slice(1, 8).map(Number);
     const elapsedSeconds = elapsed(match[8]);
-    if (seen.has(pid) || !Number.isSafeInteger(pid) || pid < 0 || !Number.isSafeInteger(rss * 1024) || elapsedSeconds === null || !Number.isFinite(Date.parse(match[9]))) {
+    const cpuSeconds = cpuTime(match[10]);
+    if (seen.has(pid) || !Number.isSafeInteger(pid) || pid < 0 || !Number.isSafeInteger(rss * 1024) || elapsedSeconds === null || cpuSeconds === null || !Number.isFinite(Date.parse(match[9]))) {
       throw problem('PROCESS_UNAVAILABLE', 'A resposta do macOS sobre os processos não pôde ser validada.');
     }
     seen.add(pid);
-    const executable = match[10];
+    const executable = match[11];
     const bundle = executable.match(/\/([^/]+)\.app(?:\/|$)/i);
-    result.push({ pid, ppid, uid, ruid, svuid, cpu, memoryBytes: rss * 1024, elapsedSeconds,
+    result.push({ pid, ppid, uid, ruid, svuid, cpu, cpuSeconds, memoryBytes: rss * 1024, elapsedSeconds,
       executable, started: match[9].replace(/\s+/g, ' '), name: (bundle ? bundle[1] : path.basename(executable)).slice(0, 180) });
   }
   if (!result.length) throw problem('PROCESS_UNAVAILABLE', 'O macOS não retornou uma lista de processos.');
@@ -59,12 +68,19 @@ function create(options = {}) {
   const agentsDir = path.join(home, 'Library', 'LaunchAgents');
   const domain = `gui/${uid}`;
   const now = options.now || Date.now;
+  const getCpus = options.getCpus || (() => os.cpus());
+  const getMemoryInfo = options.getMemoryInfo || (() => ({ total: os.totalmem(), free: os.freemem() }));
+  const waitForCpuSample = options.waitForCpuSample || (ms => new Promise(resolve => setTimeout(resolve, ms)));
   const ttl = options.tokenTtlMs ?? 2 * 60 * 1000;
   const tokens = new Map();
   const terminated = new Map();
-  let processes = new Map();
+  let processGroups = new Map();
+  let cpuSamples = new Map();
   let services = new Map();
   let listing = null;
+  let sampling = null;
+  let pressureSample = null;
+  let pressureAt = -Infinity;
   let busy = false;
 
   const command = (file, args) => run(file, args, { timeout: 10000, maxBuffer: 16 * 1024 * 1024, env: { ...process.env, LC_ALL: 'C', LANG: 'C' } });
@@ -96,9 +112,8 @@ function create(options = {}) {
     return protectedSet;
   }
 
-  function blocked(item, rows, { service = false } = {}) {
+  function blocked(item, rows, { service = false, protectedSet = protectedPids(rows) } = {}) {
     if (!validPid(item.pid) || uid === 0 || item.uid !== uid || item.ruid !== uid || item.svuid !== uid) return 'Processo do sistema ou de outro usuário.';
-    const protectedSet = protectedPids(rows);
     if (!protectedSet) return 'Não foi possível verificar a proteção do próprio aplicativo.';
     if (protectedSet.has(item.pid) || within(item.executable, selfBundle) || /(?:^|\/)CalangoClean(?: Helper[^/]*)?(?:\.app|\/|$)/i.test(item.executable)) return 'O CalangoClean e os processos necessários para executá-lo são protegidos.';
     if (!validPath(item.executable)) return 'O caminho deste processo não pôde ser validado.';
@@ -107,15 +122,62 @@ function create(options = {}) {
     return null;
   }
 
-  function publicProcess(item, rows) {
-    const blockedReason = blocked(item, rows);
+  function publicProcess(item, rows, protectedSet) {
+    const blockedReason = blocked(item, rows, { protectedSet });
     const prior = terminated.get(item.pid);
     const canForce = !blockedReason && !!prior && prior.identity === processIdentity(item) && now() - prior.at <= ttl;
     return { pid: item.pid, name: item.name, cpu: item.cpu, memoryBytes: item.memoryBytes,
       elapsedSeconds: item.elapsedSeconds, canTerminate: !blockedReason, canForce, blockedReason };
   }
 
+  async function publishProcesses(rows) {
+    const at = now();
+    const nextSamples = new Map();
+    const grouped = new Map();
+    const protectedSet = protectedPids(rows);
+    for (const item of rows) {
+      const identity = processIdentity(item);
+      const previous = cpuSamples.get(item.pid);
+      const seconds = previous && previous.identity === identity ? (at - previous.at) / 1000 : 0;
+      const delta = previous ? item.cpuSeconds - previous.cpuSeconds : -1;
+      const result = publicProcess(item, rows, protectedSet);
+      if (seconds > 0 && delta >= 0) result.cpu = delta / seconds * 100;
+      nextSamples.set(item.pid, { at, identity, cpuSeconds: item.cpuSeconds });
+      const bundle = appBundle(item);
+      // Protected processes never lend their identity or permissions to an app group.
+      const key = bundle && !result.blockedReason ? `app:${item.uid}:${bundle}` : `process:${identity}`;
+      if (!grouped.has(key)) grouped.set(key, { key, bundle, members: [], values: [] });
+      grouped.get(key).members.push(item);
+      grouped.get(key).values.push(result);
+    }
+    const nextGroups = new Map();
+    const publicRows = await Promise.all([...grouped.values()].map(async group => {
+      group.members.sort((a, b) => {
+        const primary = item => group.bundle && path.dirname(item.executable) === path.join(group.bundle, 'Contents', 'MacOS');
+        return Number(primary(b)) - Number(primary(a)) || b.elapsedSeconds - a.elapsedSeconds || a.pid - b.pid;
+      });
+      const representative = group.members[0];
+      const result = { ...group.values.find(item => item.pid === representative.pid),
+        id: crypto.createHash('sha256').update(group.key).digest('hex').slice(0, 24),
+        pids: group.members.map(item => item.pid).sort((a, b) => a - b),
+        processCount: group.members.length, isAppGroup: group.key.startsWith('app:'),
+        cpu: group.values.reduce((total, item) => total + item.cpu, 0),
+        memoryBytes: group.values.reduce((total, item) => total + item.memoryBytes, 0),
+        elapsedSeconds: Math.max(...group.values.map(item => item.elapsedSeconds)),
+        canForce: group.values.every(item => item.canForce) };
+      nextGroups.set(representative.pid, group.members);
+      if (group.bundle && options.getIcon) {
+        try { result.icon = await options.getIcon(group.bundle); } catch { result.icon = null; }
+      }
+      return result;
+    }));
+    processGroups = nextGroups;
+    cpuSamples = nextSamples;
+    return publicRows.sort((a, b) => b.cpu - a.cpu || b.memoryBytes - a.memoryBytes);
+  }
+
   async function pressure() {
+    if (pressureSample && now() - pressureAt < 5000) return pressureSample;
     const results = await Promise.allSettled([
       command('/usr/sbin/sysctl', ['-n', 'kern.memorystatus_vm_pressure_level']),
       command('/usr/bin/memory_pressure', ['-Q']), // Apenas consulta; jamais usa -l/-p/-S.
@@ -125,7 +187,71 @@ function create(options = {}) {
     const level = results[0].status === 'fulfilled' ? ({ 1: 'normal', 2: 'warning', 4: 'critical' }[results[0].value.stdout.trim()] || 'unknown') : 'unknown';
     const match = results[1].status === 'fulfilled' ? results[1].value.stdout.match(/System-wide memory free percentage:\s*(\d+(?:\.\d+)?)%/) : null;
     const percent = match ? Number(match[1]) : null;
-    return { level, freePercent: percent !== null && percent >= 0 && percent <= 100 ? percent : null };
+    pressureSample = { level, freePercent: percent !== null && percent >= 0 && percent <= 100 ? percent : null };
+    pressureAt = now();
+    return pressureSample;
+  }
+
+  async function systemMetrics() {
+    const result = { cpuPercent: null, memoryUsedBytes: null, memoryTotalBytes: null };
+    // Physical occupancy includes caches; memory pressure remains the macOS health signal.
+    try {
+      const memory = getMemoryInfo();
+      if (Number.isSafeInteger(memory?.total) && memory.total > 0 && Number.isSafeInteger(memory.free) && memory.free >= 0 && memory.free <= memory.total) {
+        result.memoryTotalBytes = memory.total;
+        result.memoryUsedBytes = memory.total - memory.free;
+      }
+    } catch { /* Memory and CPU remain independently available. */ }
+    try {
+      const keys = ['user', 'nice', 'sys', 'idle', 'irq'];
+      const snapshot = () => {
+        const cpus = getCpus();
+        if (!Array.isArray(cpus) || !cpus.length) throw new Error('CPU unavailable');
+        return cpus.map(cpu => keys.map(key => {
+          const value = cpu?.times?.[key];
+          if (!Number.isSafeInteger(value) || value < 0) throw new Error('Invalid CPU counter');
+          return value;
+        }));
+      };
+      const before = snapshot();
+      // One bounded sample belongs to this request, with no background timer here.
+      await waitForCpuSample(200);
+      const after = snapshot();
+      if (before.length !== after.length) return result;
+      let total = 0;
+      let idle = 0;
+      for (let core = 0; core < before.length; core++) {
+        for (let key = 0; key < keys.length; key++) {
+          const delta = after[core][key] - before[core][key];
+          if (delta < 0) return result;
+          total += delta;
+          if (keys[key] === 'idle') idle += delta;
+        }
+      }
+      if (Number.isSafeInteger(total) && total > 0) result.cpuPercent = (total - idle) / total * 100;
+    } catch { /* Do not manufacture zero usage when sampling fails. */ }
+    return result;
+  }
+
+  async function sampleMetrics(rows) {
+    const [system, memoryPressure, processState] = await Promise.all([
+      systemMetrics(), pressure(),
+      (rows ? Promise.resolve(rows) : readProcesses()).then(publishProcesses).then(processes => ({ processes })).catch(() => ({
+        processError: 'Não foi possível atualizar os aplicativos. A lista mantém a última leitura.',
+      })),
+    ]);
+    return { ok: true, systemMetrics: system, memoryPressure, ...processState,
+      pressureError: memoryPressure.level === 'unknown' ? 'A pressão de memória não está disponível neste macOS.' : undefined,
+      sampledAt: new Date(now()).toISOString() };
+  }
+
+  function metrics() {
+    // A manual refresh owns the newer snapshot; do not race it with another ps.
+    if (listing) return listing.then(({ services, serviceError, ...result }) => result);
+    if (sampling) return sampling;
+    // Refreshing telemetry does not invalidate consent tokens or reread services.
+    sampling = sampleMetrics().catch(errorResult).finally(() => { sampling = null; });
+    return sampling;
   }
 
   async function agentRoot() {
@@ -210,38 +336,42 @@ function create(options = {}) {
   async function list() {
     if (busy) return failure('BUSY', 'Uma operação já está em andamento.');
     if (listing) return listing;
-    tokens.clear(); processes.clear(); services.clear();
+    const pendingSample = sampling;
+    tokens.clear();
     listing = (async () => {
+      if (pendingSample) await pendingSample;
+      processGroups.clear(); services.clear();
       const rows = await readProcesses();
-      processes = new Map(rows.map(item => [item.pid, item]));
-      const [memoryPressure, serviceState] = await Promise.all([
-        pressure(), readServices(rows).catch(() => ({ result: new Map(), serviceError: 'Não foi possível ler os LaunchAgents da sua sessão.' })),
+      const [metricState, serviceState] = await Promise.all([
+        sampleMetrics(rows), readServices(rows).catch(() => ({ result: new Map(), serviceError: 'Não foi possível ler os LaunchAgents da sua sessão.' })),
       ]);
+      if (!metricState.ok) throw problem('UNAVAILABLE', metricState.error);
       services = serviceState.result;
-      const publicRows = await Promise.all(rows.map(async item => {
-        const result = publicProcess(item, rows);
-        const bundle = item.executable.match(/^(.*?\.app)(?:\/|$)/i)?.[1];
-        if (bundle && options.getIcon) {
-          try { result.icon = await options.getIcon(bundle); } catch { result.icon = null; }
-        }
-        return result;
-      }));
-      return { ok: true, processes: publicRows.sort((a, b) => b.cpu - a.cpu || b.memoryBytes - a.memoryBytes),
-        memoryPressure, pressureError: memoryPressure.level === 'unknown' ? 'A pressão de memória não está disponível neste macOS.' : undefined,
+      return { ...metricState,
         services: [...services.values()].map(item => ({ id: item.id, label: item.label, pid: item.pid, canUnload: !item.blockedReason, blockedReason: item.blockedReason })),
-        serviceError: serviceState.serviceError, sampledAt: new Date(now()).toISOString() };
+        serviceError: serviceState.serviceError };
     })().catch(errorResult).finally(() => { listing = null; });
     return listing;
   }
 
-  async function currentProcess(pid, expected) {
+  async function currentGroup(expected) {
     const rows = await readProcesses();
-    const item = rows.find(row => row.pid === pid);
-    if (!item) throw problem('NOT_FOUND', 'O processo já foi encerrado. Atualize a lista.');
-    if (processIdentity(item) !== processIdentity(expected)) throw problem('CHANGED', 'Este PID agora pertence a outro processo ou mudou de identidade. Atualize a lista.');
-    const reason = blocked(item, rows);
-    if (reason) throw problem('PROTECTED', reason);
-    return item;
+    const current = new Map(rows.map(item => [item.pid, item]));
+    return expected.map(previous => {
+      const item = current.get(previous.pid);
+      if (!item) throw problem('NOT_FOUND', 'Um dos processos já foi encerrado. Atualize a lista.');
+      if (processIdentity(item) !== processIdentity(previous)) throw problem('CHANGED', 'Um dos processos mudou de identidade. Atualize a lista e revise novamente.');
+      const reason = blocked(item, rows);
+      if (reason) throw problem('PROTECTED', reason);
+      return item;
+    });
+  }
+
+  function requireNormalAttempt(items) {
+    for (const item of items) {
+      const prior = terminated.get(item.pid);
+      if (!prior || prior.identity !== processIdentity(item) || now() - prior.at > ttl) throw problem('FORCE_NOT_ALLOWED', 'Peça para encerrar normalmente antes de forçar o encerramento.');
+    }
   }
 
   function issue(kind, target, snapshot, mode, extra = {}) {
@@ -266,13 +396,13 @@ function create(options = {}) {
     if (busy || listing) return failure('BUSY', 'Aguarde a operação em andamento.');
     try {
       if (!validPid(pid) || typeof force !== 'boolean') throw problem('NOT_FOUND', 'Selecione um processo da lista.');
-      const expected = processes.get(pid);
+      const expected = processGroups.get(pid);
       if (!expected) throw problem('NOT_FOUND', 'Atualize a lista antes de encerrar um processo.');
-      const item = await currentProcess(pid, expected);
-      const prior = terminated.get(pid);
-      if (force && (!prior || prior.identity !== processIdentity(item) || now() - prior.at > ttl)) throw problem('FORCE_NOT_ALLOWED', 'Peça para encerrar normalmente antes de forçar o encerramento.');
-      const token = issue('process', pid, item, dryRun, { force });
-      return { ok: true, token, pid, name: item.name, force, dryRun };
+      const items = await currentGroup(expected);
+      if (force) requireNormalAttempt(items);
+      const token = issue('process', pid, items, dryRun, { force });
+      return { ok: true, token, pid, name: items[0].name, pids: items.map(item => item.pid).sort((a, b) => a - b),
+        processCount: items.length, isAppGroup: !!appBundle(items[0]), force, dryRun };
     } catch (error) { return errorResult(error); }
   }
 
@@ -282,20 +412,42 @@ function create(options = {}) {
     try {
       const confirmation = consume(request, 'process', 'pid', dryRun);
       if (typeof request.force !== 'boolean' || request.force !== confirmation.force) throw problem('CHANGED', 'O tipo de encerramento mudou. Revise novamente.');
-      const item = await currentProcess(request.pid, confirmation.snapshot);
-      const prior = terminated.get(item.pid);
-      if (confirmation.force && (!prior || prior.identity !== processIdentity(item) || now() - prior.at > ttl)) throw problem('FORCE_NOT_ALLOWED', 'O encerramento normal precisa ser tentado novamente.');
+      const items = await currentGroup(confirmation.snapshot);
+      if (confirmation.force) requireNormalAttempt(items);
       if (dryRun) return { ok: true, simulated: true, exited: false, canForce: false };
-      // Nenhum await entre a última validação e o sinal; nunca sinaliza grupos.
-      signal(item.pid, confirmation.force ? 'SIGKILL' : 'SIGTERM');
-      if (!confirmation.force) terminated.set(item.pid, { identity: processIdentity(item), at: now() });
-      else terminated.delete(item.pid);
+      // Every positive PID was reviewed and revalidated; never signal an OS process group.
+      const signaled = [];
+      for (const item of items) {
+        try { signal(item.pid, confirmation.force ? 'SIGKILL' : 'SIGTERM'); }
+        catch (error) {
+          if (error.code === 'ESRCH') { terminated.delete(item.pid); continue; }
+          if (!signaled.length) throw error;
+          return { ok: true, simulated: false, exited: false, canForce: false,
+            warning: 'Alguns processos receberam o sinal, mas o macOS impediu concluir o encerramento. Atualize a lista.' };
+        }
+        signaled.push(item);
+        if (!confirmation.force) terminated.set(item.pid, { identity: processIdentity(item), at: now() });
+        else terminated.delete(item.pid);
+      }
       // Consulta única após o sinal, sem monitoramento ou espera em segundo plano.
       let remaining;
-      try { remaining = (await readProcesses()).find(row => row.pid === item.pid && processIdentity(row) === processIdentity(item)); }
+      let after;
+      try {
+        after = new Map((await readProcesses()).map(item => [item.pid, item]));
+        remaining = items.filter(item => after.has(item.pid) && processIdentity(after.get(item.pid)) === processIdentity(item));
+      }
       catch { return { ok: true, simulated: false, exited: false, canForce: false, warning: 'O sinal foi enviado, mas não foi possível confirmar se o processo encerrou. Atualize a lista.' }; }
-      if (!remaining) terminated.delete(item.pid);
-      return { ok: true, simulated: false, exited: !remaining, canForce: !!remaining && !confirmation.force };
+      const remainingPids = new Set(remaining.map(item => item.pid));
+      for (const item of items) if (!remainingPids.has(item.pid)) terminated.delete(item.pid);
+      // Keep the just-shown action usable while the next telemetry cycle catches up.
+      const activeSnapshot = (processGroups.get(request.pid) || items).filter(item => after.has(item.pid) && processIdentity(after.get(item.pid)) === processIdentity(item));
+      if (activeSnapshot.length) processGroups.set(request.pid, activeSnapshot);
+      else processGroups.delete(request.pid);
+      const canForce = !!remaining.length && !confirmation.force && activeSnapshot.every(item => {
+        const prior = terminated.get(item.pid);
+        return prior && prior.identity === processIdentity(item) && now() - prior.at <= ttl;
+      });
+      return { ok: true, simulated: false, exited: !remaining.length, canForce };
     } catch (error) { return errorResult(error); }
     finally { busy = false; }
   }
@@ -338,7 +490,7 @@ function create(options = {}) {
     finally { busy = false; }
   }
 
-  return { list, prepareProcess, terminate, prepareService, unloadService };
+  return { list, metrics, prepareProcess, terminate, prepareService, unloadService };
 }
 
 module.exports = { create, parseProcesses };

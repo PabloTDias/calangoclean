@@ -182,6 +182,7 @@ function create({ withMutation = (fn) => fn(), onTrash = () => {}, scannerOption
     const height = Math.min(800, area.height - 32);
     win = new BrowserWindow({
       title: demo ? 'Duplicados — demonstração' : 'Duplicados — CalangoClean',
+      icon: path.join(__dirname, '..', 'ui', 'app-icon.png'),
       width, height, minWidth: Math.min(820, width), minHeight: Math.min(600, height),
       show: false, backgroundColor: currentAppearance().colorScheme === 'dark' ? '#202320' : '#fafbfa', resizable: true, movable: true,
       autoHideMenuBar: true,

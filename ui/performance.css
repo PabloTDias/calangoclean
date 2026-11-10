@@ -1,9 +1,9 @@
 .performance-tool { min-width: 0; color: var(--text); font: 12px/1.4 var(--font); }
-.performance-tool.performance-panel { display: grid; gap: 8px; padding: 3px 0; }
+.performance-tool.performance-panel { display: grid; gap: 7px; padding: 3px 0; }
 .performance-tool .performance-heading { display: flex; justify-content: space-between; align-items: start; gap: 10px; }
 .performance-tool .performance-heading > div { min-width: 0; }
 .performance-tool .performance-heading h2 { font-size: 16px; font-weight: 600; letter-spacing: -.25px; }
-.performance-tool .performance-heading p { margin-top: 3px; color: var(--muted); font-size: 11px; }
+.performance-tool .performance-heading p { margin-top: 2px; color: var(--muted); font-size: 10px; }
 .performance-tool .performance-button { flex: none; min-height: 30px; padding: 5px 8px; border: 1px solid var(--stroke); border-radius: 6px; background: var(--card); color: var(--text); font: 500 11px/1.35 var(--font); text-align: center; }
 .performance-tool .performance-button:hover:not(:disabled) { background: var(--card-hi); }
 .performance-tool .performance-primary { border-color: transparent; background: var(--accent); color: var(--accent-ink); }
@@ -11,25 +11,54 @@
 .performance-tool .performance-danger { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 45%, var(--stroke)); }
 .performance-tool .performance-primary.performance-danger { background: var(--crit); color: var(--bg); }
 .performance-tool button:disabled { opacity: .5; cursor: default; }
-.performance-tool .performance-pressure { padding: 9px 10px; border: 1px solid var(--stroke); border-radius: 8px; background: var(--card); }
-.performance-tool .performance-pressure strong { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 12px; }
+.performance-tool .performance-gauges { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.performance-tool .performance-gauge { display: grid; justify-items: center; align-content: start; min-width: 0; padding: 7px 8px; border: 1px solid var(--stroke); border-radius: 8px; background: var(--card); }
+.performance-tool .performance-gauge-label { font-size: 11px; font-weight: 600; color: var(--muted); }
+.performance-tool .performance-gauge > svg { display: block; width: 92px; max-width: 100%; height: auto; margin-top: 1px; fill: none; }
+.performance-tool .performance-gauge-segment { fill: var(--track); transition: fill .25s; }
+.performance-tool .performance-gauge-segment[data-filled="true"][data-zone="low"] { fill: light-dark(#42a8d7, #64bce7); }
+.performance-tool .performance-gauge-segment[data-filled="true"][data-zone="medium"] { fill: light-dark(#54b881, #72cf99); }
+.performance-tool .performance-gauge-segment[data-filled="true"][data-zone="high"] { fill: light-dark(#efbd50, #f3c65f); }
+.performance-tool .performance-gauge-segment[data-filled="true"][data-zone="very-high"] { fill: light-dark(#eb795f, #f2937e); }
+.performance-tool .performance-gauge-needle { fill: var(--text); transition: transform .45s cubic-bezier(.2,.8,.2,1); }
+.performance-tool .performance-gauge-pivot { fill: var(--text); stroke: var(--card); stroke-width: 1.5; }
+.performance-tool .performance-gauge-value { margin-top: -3px; font-size: 18px; font-weight: 600; letter-spacing: -.6px; line-height: 1.25; font-variant-numeric: tabular-nums; }
+.performance-tool .performance-gauge-detail { max-width: 100%; margin-top: 2px; color: var(--muted); font-size: 10px; text-align: center; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.performance-tool .performance-gauge[data-state="unknown"] .performance-gauge-pivot { fill: var(--muted); }
+.performance-tool .performance-charts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.performance-tool .performance-chart { min-width: 0; padding: 8px; border: 1px solid var(--stroke); border-radius: 8px; background: var(--card); }
+.performance-tool .performance-chart-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; margin-bottom: 6px; }
+.performance-tool .performance-chart-heading h3 { font-size: 11px; font-weight: 600; }
+.performance-tool .performance-chart-heading > strong { font-size: 11px; color: var(--accent); font-weight: 600; font-variant-numeric: tabular-nums; }
+.performance-tool .performance-chart > svg { display: block; width: 100%; height: 44px; overflow: visible; }
+.performance-tool .performance-chart-grid { fill: none; stroke: var(--stroke); stroke-width: .6; vector-effect: non-scaling-stroke; }
+.performance-tool .performance-chart-line { fill: none; stroke: light-dark(#3295bf, #63b9df); stroke-width: 1.7; vector-effect: non-scaling-stroke; stroke-linejoin: round; stroke-linecap: round; }
+.performance-tool .performance-chart-area { fill: light-dark(#3295bf20, #63b9df22); }
+.performance-tool .performance-chart-dot { fill: light-dark(#3295bf, #63b9df); }
+.performance-tool .performance-chart-footer { display: flex; justify-content: space-between; margin-top: 3px; color: var(--muted); font-size: 9px; }
+.performance-tool .performance-chart-detail { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.performance-tool #performanceMemoryChart .performance-chart-footer { display: none; }
+.performance-tool .performance-pressure { margin-top: 5px; }
+.performance-tool .performance-pressure strong { display: flex; align-items: center; gap: 4px; font-weight: 500; font-size: 9.5px; }
 .performance-tool .performance-pressure strong::before { content: ''; display: block; flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .performance-tool .performance-pressure[data-level="normal"] strong::before { background: var(--ok); }
 .performance-tool .performance-pressure[data-level="warning"] strong::before { background: var(--warn); }
 .performance-tool .performance-pressure[data-level="critical"] strong::before { background: var(--crit); }
-.performance-tool .performance-pressure p { margin-top: 3px; color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
+.performance-tool .performance-pressure p { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .performance-tool .performance-note { color: var(--muted); font-size: 11px; overflow-wrap: anywhere; }
-.performance-tool .performance-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(84px, .45fr); gap: 8px; }
-.performance-tool .performance-filters label { display: grid; gap: 4px; min-width: 0; color: var(--muted); font-size: 11px; }
-.performance-tool .performance-filters input, .performance-tool .performance-filters select { display: block; width: 100%; min-width: 0; min-height: 30px; padding: 5px 7px; border: 1px solid var(--stroke); border-radius: 6px; background: var(--card); color: var(--text); font: 12px var(--font); }
+.performance-tool .performance-filters { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.performance-tool .performance-filters label { display: grid; min-width: 0; font-size: 0; }
+.performance-tool .performance-filters input { display: block; width: 100%; min-width: 0; min-height: 30px; padding: 5px 7px; border: 1px solid var(--stroke); border-radius: 6px; background: var(--card); color: var(--text); font: 12px var(--font); }
 .performance-tool .performance-filters input { user-select: text; }
 .performance-tool .performance-filters input::placeholder { color: var(--muted); opacity: 1; }
 .performance-tool .performance-list-frame { min-width: 0; border: 1px solid var(--stroke); border-radius: 8px; overflow: hidden; background: var(--card); }
 .performance-tool .performance-list { max-height: clamp(148px, 35vh, 260px); padding: 0; list-style: none; overflow-y: auto; overflow-x: hidden; scrollbar-width: thin; }
 .performance-tool .performance-list > li + li { border-top: 1px solid transparent; }
 .performance-tool .performance-list > li:nth-child(even) { background: var(--card-hi); }
-.performance-tool .performance-columns, .performance-tool .performance-process-row { display: grid; grid-template-columns: 24px minmax(0,1fr) 42px 60px 66px; gap: 6px; align-items: center; padding: 6px 8px; }
-.performance-tool .performance-columns { border-bottom: 1px solid var(--stroke); color: var(--muted); font-size: 10px; text-align: right; }
+.performance-tool .performance-columns, .performance-tool .performance-process-row { display: grid; grid-template-columns: 24px minmax(0,1fr) 43px 80px 26px; gap: 6px; align-items: center; padding: 6px 8px; }
+.performance-tool .performance-columns { border-bottom: 1px solid var(--stroke); color: var(--muted); font-size: 10px; text-align: right; background: var(--card-hi); }
+.performance-tool .performance-sort { min-width: 0; padding: 2px 0; border: 0; border-radius: 3px; background: transparent; color: var(--muted); font: 500 10px/1.4 var(--font); text-align: right; white-space: nowrap; cursor: pointer; }
+.performance-tool .performance-sort:hover, .performance-tool .performance-sort[aria-pressed="true"] { color: var(--text); }
 .performance-tool .performance-column-name { grid-column: span 2; text-align: left; }
 .performance-tool .performance-process-row, .performance-tool .performance-service-row { display: flex; align-items: center; gap: 7px; width: 100%; min-width: 0; padding: 8px; }
 .performance-tool .performance-process-row { display: grid; gap: 6px; padding: 6px 8px; min-height: 46px; }
@@ -42,6 +71,14 @@
 .performance-tool .performance-row-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10.5px; color: var(--muted); }
 .performance-tool .performance-metrics { font-size: 11px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
 .performance-tool .performance-cpu, .performance-tool .performance-memory { text-align: right; white-space: nowrap; font-size: 10.5px; }
+.performance-tool .performance-memory { display: grid; gap: 3px; min-width: 0; }
+.performance-tool .performance-memory-usage { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.performance-tool .performance-memory-bar { display: block; flex: 1; min-width: 16px; height: 5px; border-radius: 3px; overflow: hidden; background: var(--track); }
+.performance-tool .performance-memory-bar > span { display: block; height: 100%; border-radius: inherit; background: light-dark(#3199bd, #63b9df); transition: width .4s ease; }
+.performance-tool .performance-memory-bar[data-level="medium"] > span { background: var(--warn); }
+.performance-tool .performance-memory-bar[data-level="high"] > span { background: var(--crit); }
+.performance-tool .performance-memory-percent { color: var(--muted); font-size: 9px; min-width: 25px; }
+.performance-tool .performance-list-frame[data-stale="true"] .performance-metrics { opacity: .5; }
 .performance-tool .performance-protected { flex: none; max-width: 61px; color: var(--muted); font-size: 10px; }
 .performance-tool .performance-empty { padding: 14px 9px; color: var(--muted); text-align: center; font-size: 11px; }
 .performance-tool .performance-section-title { margin-top: 5px; font-size: 13px; font-weight: 600; }
@@ -58,16 +95,25 @@
 .performance-tool .performance-confirm-warning { color: var(--warn); font-size: 12px; overflow-wrap: anywhere; }
 .performance-tool .performance-dialog-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
 .performance-tool .performance-dialog-actions button { flex: 1; min-width: 0; min-height: 34px; white-space: normal; }
-.performance-tool button:focus-visible, .performance-tool input:focus-visible, .performance-tool select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.performance-tool button:focus-visible, .performance-tool input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) {
+  .performance-tool .performance-gauge-segment, .performance-tool .performance-gauge-needle, .performance-tool .performance-memory-bar > span { transition: none; }
+}
 @media (max-width: 350px) {
   .performance-tool .performance-heading { gap: 6px; }
   .performance-tool .performance-heading h2 { font-size: 15px; }
   .performance-tool .performance-button { padding: 5px 6px; }
   .performance-tool .performance-process-row, .performance-tool .performance-service-row { gap: 6px; padding: 7px 6px; }
-  .performance-tool .performance-process-row, .performance-tool .performance-columns { grid-template-columns: 22px minmax(0,1fr) 36px 51px 57px; gap: 4px; padding: 6px; }
+  .performance-tool .performance-process-row, .performance-tool .performance-columns { grid-template-columns: 20px minmax(0,1fr) 35px 65px 24px; gap: 4px; padding: 6px; }
   .performance-tool .performance-process-row .performance-button { font-size: 10px; padding: 5px 3px; }
   .performance-tool .performance-cpu, .performance-tool .performance-memory { font-size: 10px; }
+  .performance-tool .performance-sort { font-size: 9px; }
+  .performance-tool .performance-chart { padding: 7px; }
+  .performance-tool .performance-chart > svg { height: 40px; }
   .performance-tool .performance-process-icon { width: 22px; height: 22px; }
   .performance-tool .performance-row-meta { font-size: 10px; }
   .performance-tool .performance-dialog { padding: 13px; }
 }
+
+.performance-tool .performance-process-row .performance-close { width: 26px; min-height: 26px; padding: 0; border-color: transparent; background: transparent; color: var(--crit); font-size: 21px; line-height: 1; opacity: .8; }
+.performance-tool .performance-close:hover:not(:disabled) { opacity: 1; background: color-mix(in srgb, var(--crit) 12%, transparent); }

@@ -4,7 +4,7 @@ const { create, newer, parseRelease, downloadUrl, INTERVAL } = require('../src/u
 
 const release = (version = 'v0.3.2') => ({
   tag_name: version, draft: false, prerelease: false,
-  assets: [{ name: 'CalangoClean.dmg', state: 'uploaded', size: 100,
+  assets: [{ name: 'CalangoClean.dmg', state: 'uploaded', size: 100, digest: `sha256:${'ab'.repeat(32)}`,
     browser_download_url: `https://github.com/PabloTDias/calangoclean/releases/download/${version}/CalangoClean.dmg` }],
 });
 
@@ -21,6 +21,11 @@ test('só oferece release estável com DMG válido do repositório esperado', ()
   assert.equal(parseRelease({ ...release(), draft: true }, '0.3.1'), null);
   assert.equal(parseRelease({ ...release(), prerelease: true }, '0.3.1'), null);
   assert.equal(parseRelease({ ...release(), assets: [] }, '0.3.1'), null);
+  assert.equal(parseRelease(release(), '0.3.1').sha256, 'ab'.repeat(32));
+  const noDigest = release(); delete noDigest.assets[0].digest;
+  assert.equal(parseRelease(noDigest, '0.3.1'), null, 'sem SHA-256 publicado não há atualização segura');
+  const badDigest = release(); badDigest.assets[0].digest = 'sha1:abc';
+  assert.equal(parseRelease(badDigest, '0.3.1'), null);
   const versioned = release();
   versioned.assets[0].name = 'CalangoClean-0.3.2-universal.dmg';
   assert.ok(parseRelease(versioned, '0.3.1'));
